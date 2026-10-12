@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="pt-PT">
 <head>
@@ -26,25 +25,63 @@
     <p>Verifica o URL e a chave publicável no app.js.</p>
   </section>
 
+  <!-- Definir palavra-passe após convite -->
+  <section id="passwordPanel" class="panel loginPanel hidden">
+    <p class="eyebrow">ANJOSENERGY · PRIMEIRO ACESSO</p>
+    <h1>Definir palavra-passe</h1>
+    <p class="muted">
+      Cria uma palavra-passe para poderes entrar na tua conta.
+    </p>
+
+    <form id="passwordForm" class="stack">
+      <label for="newPassword">Nova palavra-passe</label>
+      <input
+        id="newPassword"
+        type="password"
+        autocomplete="new-password"
+        minlength="8"
+        required
+      >
+
+      <label for="confirmPassword">Confirmar palavra-passe</label>
+      <input
+        id="confirmPassword"
+        type="password"
+        autocomplete="new-password"
+        minlength="8"
+        required
+      >
+
+      <button id="savePasswordButton" type="submit">
+        Guardar palavra-passe
+      </button>
+    </form>
+
+    <p id="passwordStatus" class="status" role="status"></p>
+  </section>
+
+  <!-- Login -->
   <section id="loginPanel" class="panel loginPanel">
     <p class="eyebrow">ÁREA EMPRESARIAL</p>
     <h1>Gestão de frota e manutenção</h1>
-    <p class="muted">
-      Entra com a tua conta empresarial.
-    </p>
+    <p class="muted">Entra com a tua conta empresarial.</p>
 
     <form id="loginForm" class="stack">
-      <label>
-        Email
-        <input id="email" type="email"
-          autocomplete="username" required>
-      </label>
+      <label for="email">Email</label>
+      <input
+        id="email"
+        type="email"
+        autocomplete="username"
+        required
+      >
 
-      <label>
-        Palavra-passe
-        <input id="password" type="password"
-          autocomplete="current-password" required>
-      </label>
+      <label for="password">Palavra-passe</label>
+      <input
+        id="password"
+        type="password"
+        autocomplete="current-password"
+        required
+      >
 
       <button type="submit">Entrar</button>
     </form>
@@ -52,6 +89,7 @@
     <p id="loginStatus" class="status" role="status"></p>
   </section>
 
+  <!-- Aplicação -->
   <section id="appView" class="hidden">
 
     <section class="hero">
@@ -87,6 +125,7 @@
       <div id="alertsList" class="stack"></div>
     </section>
 
+    <!-- Veículos -->
     <section class="sectionHead mainHeading">
       <div>
         <p class="eyebrow">FROTA</p>
@@ -115,8 +154,7 @@
         </label>
 
         <label>Ano
-          <input id="year" type="number"
-            min="1900" max="2100">
+          <input id="year" type="number" min="1900" max="2100">
         </label>
 
         <label>Motor
@@ -150,13 +188,15 @@
 
       <div class="actions">
         <button type="submit">Guardar veículo</button>
-        <button type="button" id="cancelVehicle"
-          class="secondary">Cancelar</button>
+        <button type="button" id="cancelVehicle" class="secondary">
+          Cancelar
+        </button>
       </div>
     </form>
 
     <div id="vehicleList" class="cards"></div>
 
+    <!-- Manutenção -->
     <section id="maintenancePanel" class="panel hidden">
       <div class="sectionHead">
         <h2 id="maintenanceHeading">Manutenção</h2>
@@ -174,8 +214,7 @@
           </label>
 
           <label>Quilometragem
-            <input id="odometerKm" type="number"
-              min="0" required>
+            <input id="odometerKm" type="number" min="0" required>
           </label>
 
           <label>Categoria
@@ -183,13 +222,11 @@
           </label>
 
           <label>Título
-            <input id="maintenanceTitle" required
-              placeholder="Mudança de óleo">
+            <input id="maintenanceTitle" required placeholder="Mudança de óleo">
           </label>
 
           <label>Custo (€)
-            <input id="costEur" type="number"
-              min="0" step="0.01">
+            <input id="costEur" type="number" min="0" step="0.01">
           </label>
 
           <label>Próxima manutenção (km)
@@ -206,20 +243,21 @@
         </label>
 
         <label>Notas internas
-          <textarea id="notesPrivate" rows="2"></textarea>
+          <textarea id="maintenanceNotesPrivate" rows="2"></textarea>
         </label>
 
         <div class="actions">
           <button type="submit">Guardar intervenção</button>
-          <button type="button" id="cancelMaintenance"
-            class="secondary">Cancelar</button>
+          <button type="button" id="cancelMaintenance" class="secondary">
+            Cancelar
+          </button>
         </div>
       </form>
 
       <div id="maintenanceList" class="stack"></div>
     </section>
 
-    <!-- Gestão da equipa -->
+    <!-- Equipa -->
     <section id="teamPanel" class="panel hidden">
       <div class="sectionHead">
         <h2>Equipa</h2>
@@ -272,22 +310,18 @@
 <dialog id="qrDialog">
   <div class="sectionHead">
     <h2>Ficha pública / QR</h2>
-    <button type="button" id="closeQr"
-      class="secondary">Fechar</button>
+    <button type="button" id="closeQr" class="secondary">Fechar</button>
   </div>
 
   <div id="printFicha">
     <h2 id="qrVehicleTitle">Ficha do veículo</h2>
 
     <div class="qrContainer">
-      <img id="qrImage"
-        alt="Código QR da ficha pública"
-        width="260" height="260">
+      <img id="qrImage" alt="Código QR da ficha pública" width="260" height="260">
     </div>
 
     <p class="muted small">
-      Digitaliza para consultar os dados públicos
-      e o histórico publicado.
+      Digitaliza para consultar os dados públicos e o histórico publicado.
     </p>
 
     <label for="qrUrl">Endereço público</label>
@@ -297,19 +331,13 @@
   </div>
 
   <div class="actions">
-    <button type="button" id="copyQrUrl">
-      Copiar endereço
-    </button>
-    <button type="button" id="printQr" class="secondary">
-      Imprimir ficha
-    </button>
-    <button type="button" id="openPublic" class="secondary">
-      Abrir ficha
-    </button>
+    <button type="button" id="copyQrUrl">Copiar endereço</button>
+    <button type="button" id="printQr" class="secondary">Imprimir ficha</button>
+    <button type="button" id="openPublic" class="secondary">Abrir ficha</button>
   </div>
 </dialog>
 
-<!-- Ficha pública aberta através do QR -->
+<!-- Ficha pública -->
 <section id="publicView" class="container hidden">
   <a href="./">← Início</a>
   <div id="publicVehicle"></div>
