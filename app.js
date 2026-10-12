@@ -1,8 +1,8 @@
 
-// ============================================
-// GARAGEM ONLINE — ANJOSENERGY
-// Aplicação empresarial
-// ============================================
+/* ==========================================
+   GARAGEM ONLINE — ANJOSENERGY
+   Aplicação empresarial
+   ========================================== */
 
 const SUPABASE_URL =
   "https://bsnbjpenrsubqoatqqne.supabase.co";
@@ -19,7 +19,7 @@ let maintenanceRecords = [];
 
 const $ = (id) => document.getElementById(id);
 
-// ---------- Mensagens e utilitários ----------
+/* ---------- Mensagens e utilitários ---------- */
 
 function notify(message, type = "info") {
   const target = $("status") || $("loginStatus");
@@ -50,7 +50,7 @@ function isMaster() {
   return currentProfile?.role === "master";
 }
 
-// ---------- Interface ----------
+/* ---------- Interface ---------- */
 
 function showLoggedOut() {
   $("loginPanel")?.classList.remove("hidden");
@@ -86,7 +86,7 @@ function showLoggedIn() {
   $("teamPanel")?.classList.toggle("hidden", !isMaster());
 }
 
-// ---------- Arranque ----------
+/* ---------- Inicialização ---------- */
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (!window.supabase?.createClient) {
@@ -138,37 +138,35 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
-// ---------- Login e perfil ----------
+/* ---------- Eventos ---------- */
 
 function bindEvents() {
   $("loginForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const button = $("loginForm").querySelector('[type="submit"]');
-    const status = $("loginStatus");
 
     if (button) {
       button.disabled = true;
       button.textContent = "A entrar...";
     }
 
-    if (status) {
-      status.textContent = "";
-      status.hidden = false;
-    }
+    try {
+      const { error } = await db.auth.signInWithPassword({
+        email: $("email").value.trim(),
+        password: $("password").value
+      });
 
-    const { error } = await db.auth.signInWithPassword({
-      email: $("email").value.trim(),
-      password: $("password").value
-    });
-
-    if (button) {
-      button.disabled = false;
-      button.textContent = "Entrar";
-    }
-
-    if (error) {
-      notify("Falha no login. Confirma o email e a palavra-passe.", "error");
+      if (error) {
+        notify("Falha no login. Confirma o email e a palavra-passe.", "error");
+      }
+    } catch (error) {
+      notify("Erro no login: " + error.message, "error");
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Entrar";
+      }
     }
   });
 
@@ -216,9 +214,7 @@ function bindEvents() {
 
   $("maintenanceForm")?.addEventListener("submit", saveMaintenance);
 
-  $("closeQr")?.addEventListener("click", () => {
-    $("qrDialog")?.close();
-  });
+  $("closeQr")?.addEventListener("click", () => $("qrDialog")?.close());
 
   $("copyQrUrl")?.addEventListener("click", async () => {
     try {
@@ -238,6 +234,8 @@ function bindEvents() {
 
   $("refreshTeam")?.addEventListener("click", loadTeam);
 }
+
+/* ---------- Perfil ---------- */
 
 async function loadProfile(user) {
   currentUser = user;
@@ -264,19 +262,119 @@ async function loadProfile(user) {
 
   currentProfile = data;
   showLoggedIn();
+
   await loadVehicles();
+
+  if (isMaster()) {
+    await loadTeam();
+  }
 }
+
+/* ---------- Gestão da equipa ---------- */
 
 async function loadTeam() {
-  if (!isMaster()) return;
+  if (!db || !currentUser || !isMaster()) return;
 
-  notify(
-    "A gestão de perfis necessita de confirmar as funções SQL existentes.",
-    "info"
-  );
+  const list = $("teamList");
+  const button = $("refreshTeam");
+
+  if (!list) return;
+
+  if (button) button.disabled = true;
+  list.textContent = "A carregar equipa...";
+
+  try {
+    const { data, error } = await db.rpc("master_list_profiles");
+
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      list.textContent = "Não existem perfis para apresentar.";
+      return;
+    }
+
+    list.innerHTML = data.map(member => {
+      const role = member.role === "master" ? "master" : "mechanic";
+      const ownAccount = member.id === currentUser.id;
+
+      return `
+        <article class="panel team-card">
+          <h3>${escapeHTML(member.full_name || "Sem nome")}</h3>
+          <p>${escapeHTML(member.email || "Email não indicado")}</p>
+          <p>Função atual:
+            <strong>${role === "master" ? "Master" : "Mecânico"}</strong>
+          </p>
+
+          <label>
+            Nova função
+            <select data-team-role="${escapeHTML(member.id)}"
+              ${ownAccount ? "disabled" : ""}>
+              <option value="master" ${role === "master" ? "selected" : ""}>Master</option>
+              <option value="mechanic" ${role === "mechanic" ? "selected" : ""}>Mecânico</option>
+            </select>
+          </label>
+
+          <button type="button"
+            data-team-save="${escapeHTML(member.id)}"
+            ${ownAccount ? "disabled" : ""}>
+            Guardar função
+          </button>
+
+          ${ownAccount
+            ? '<p class="muted small">Esta é a tua própria conta.</p>'
+            : ""}
+        </article>
+      `;
+    }).join("");
+
+    list.querySelectorAll("[data-team-save]").forEach(button => {
+      button.addEventListener("click", async () => {
+        const userId = button.dataset.teamSave;
+        const select = list.querySelector(
+          `[data-team-role="${userId}"]`
+        );
+
+        if (!isMaster() || userId === currentUser.id) return;
+
+        const newRole = select?.value;
+
+        if (!["master", "mechanic"].includes(newRole)) {
+          notify("Função inválida.", "error");
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent = "A guardar...";
+
+        try {
+          const { error } = await db.rpc("master_set_profile_role", {
+            p_user_id: userId,
+            p_role: newRole
+          });
+
+          if (error) throw error;
+
+          notify("Função atualizada.", "success");
+          await loadTeam();
+        } catch (error) {
+          console.error("Erro ao alterar função:", error);
+          notify("Erro ao alterar função: " + error.message, "error");
+        } finally {
+          button.disabled = false;
+          button.textContent = "Guardar função";
+        }
+      });
+    });
+  } catch (error) {
+    console.error("Erro ao carregar equipa:", error);
+    list.textContent = "Erro ao carregar equipa: " + error.message;
+    notify("Não foi possível carregar a equipa.", "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
-// ---------- Veículos ----------
+/* ---------- Veículos ---------- */
 
 async function loadVehicles() {
   const { data, error } = await db
@@ -332,12 +430,8 @@ function renderVehicles() {
           Manutenção
         </button>
         ${isMaster() ? `
-          <button class="secondary" data-action="edit" data-id="${escapeHTML(v.id)}">
-            Editar
-          </button>
-          <button class="secondary" data-action="qr" data-id="${escapeHTML(v.id)}">
-            Ficha / QR
-          </button>
+          <button class="secondary" data-action="edit" data-id="${escapeHTML(v.id)}">Editar</button>
+          <button class="secondary" data-action="qr" data-id="${escapeHTML(v.id)}">Ficha / QR</button>
         ` : ""}
       </div>
     </article>
@@ -389,12 +483,8 @@ function fillVehicleForm(v) {
 
 function resetVehicleForm() {
   $("vehicleForm")?.reset();
-
   if ($("vehicleId")) $("vehicleId").value = "";
-  if ($("vehicleFormTitle")) {
-    $("vehicleFormTitle").textContent = "Novo veículo";
-  }
-
+  if ($("vehicleFormTitle")) $("vehicleFormTitle").textContent = "Novo veículo";
   $("vehicleForm")?.classList.add("hidden");
 }
 
@@ -422,16 +512,12 @@ async function saveVehicle(event) {
     private_notes: $("privateNotes").value.trim() || null
   };
 
-  let result;
-
-  if (id) {
-    result = await db.from("vehicles").update(record).eq("id", id);
-  } else {
-    result = await db.from("vehicles").insert({
-      ...record,
-      owner_id: currentUser.id
-    });
-  }
+  const result = id
+    ? await db.from("vehicles").update(record).eq("id", id)
+    : await db.from("vehicles").insert({
+        ...record,
+        owner_id: currentUser.id
+      });
 
   if (result.error) {
     notify("Erro ao guardar veículo: " + result.error.message, "error");
@@ -443,7 +529,7 @@ async function saveVehicle(event) {
   await loadVehicles();
 }
 
-// ---------- Manutenções ----------
+/* ---------- Manutenções ---------- */
 
 async function loadMaintenance(vehicle) {
   const { data, error } = await db
@@ -551,7 +637,7 @@ async function saveMaintenance(event) {
   }
 }
 
-// ---------- Alertas de IPO ----------
+/* ---------- Alertas de IPO ---------- */
 
 function renderAlerts() {
   const today = new Date().toISOString().slice(0, 10);
@@ -594,19 +680,17 @@ function renderAlerts() {
   `).join("");
 }
 
-// ---------- Ficha QR e área pública ----------
+/* ---------- Ficha QR e área pública ---------- */
 
 function openQr(vehicle) {
   const url = new URL(location.href);
   url.search = "";
-
-  // Usar public_id para a ficha, sem expor notas internas.
   url.searchParams.set("vehicle", vehicle.public_id || vehicle.id);
 
   $("qrVehicleTitle").textContent = `${vehicle.make} ${vehicle.model}`;
   $("qrUrl").value = url.href;
   $("qrHelp").textContent =
-    "A consulta pública só ficará ativa depois de ligar e testar a função SQL pública.";
+    "A ficha pública só estará ativa depois de ligar e testar a função SQL pública.";
 
   $("qrImage").src =
     "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" +
@@ -629,7 +713,7 @@ async function showPublicVehicle(code) {
   console.info("Pedido de ficha pública:", code);
 }
 
-// ---------- Exportação para outros módulos ----------
+/* ---------- API interna ---------- */
 
 window.GaragemOnline = {
   get client() { return db; },
