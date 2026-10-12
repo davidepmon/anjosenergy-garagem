@@ -723,4 +723,82 @@ window.GaragemOnline = {
   get selectedVehicle() { return selectedVehicle; },
   reload: loadVehicles,
   logout: () => db?.auth.signOut()
+   
+const createTeamForm = document.getElementById("createTeamForm");
+
+if (createTeamForm) {
+  createTeamForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const name = document.getElementById("teamName").value.trim();
+    const email = document.getElementById("teamEmail").value.trim();
+    const button = document.getElementById("createTeamButton");
+    const status = document.getElementById("status");
+
+    if (!name || !email) {
+      status.textContent = "Preenche o nome e o email.";
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "A criar conta...";
+    status.textContent = "";
+
+    try {
+      const { data: sessionData, error: sessionError } =
+        await db.auth.getSession();
+
+      if (sessionError) throw sessionError;
+
+      const token = sessionData.session?.access_token;
+
+      if (!token) {
+        throw new Error("A sessão expirou. Entra novamente.");
+      }
+
+      const { data, error } = await db.functions.invoke(
+        "create-team-user",
+        {
+          body: {
+            nome: name,
+            email: email,
+            role: "mechanic"
+          }
+        }
+      );
+
+      if (error) {
+        let details = error.message;
+
+        try {
+          const response = await error.context?.json();
+          if (response?.error) details = response.error;
+        } catch {}
+
+        throw new Error(details);
+      }
+
+      if (!data?.success) {
+        throw new Error(data?.error || "Não foi possível criar a conta.");
+      }
+
+      status.textContent =
+        data.message || "Conta criada. Foi enviado um convite por email.";
+
+      createTeamForm.reset();
+
+      if (typeof loadTeam === "function") {
+        await loadTeam();
+      }
+    } catch (error) {
+      console.error("Erro ao criar funcionário:", error);
+      status.textContent =
+        "Erro ao criar funcionário: " + error.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = "Criar conta e enviar convite";
+    }
+  });
+}
+
 };
