@@ -219,19 +219,47 @@
       <div id="maintenanceList" class="stack"></div>
     </section>
 
+    <!-- Gestão da equipa -->
     <section id="teamPanel" class="panel hidden">
       <div class="sectionHead">
         <h2>Equipa</h2>
-        <button id="refreshTeam" class="secondary">
+        <button id="refreshTeam" class="secondary" type="button">
           Atualizar
         </button>
       </div>
 
-      <p class="muted small">
-        Cria primeiro as contas em Supabase →
-        Authentication → Users. Depois podes atribuir
-        os perfis nesta secção.
-      </p>
+      <details class="teamCreate">
+        <summary>+ Adicionar funcionário</summary>
+
+        <form id="createTeamForm" class="stack">
+          <label for="teamName">Nome completo</label>
+          <input
+            id="teamName"
+            name="nome"
+            type="text"
+            autocomplete="name"
+            required
+          >
+
+          <label for="teamEmail">Email profissional</label>
+          <input
+            id="teamEmail"
+            name="email"
+            type="email"
+            autocomplete="email"
+            required
+          >
+
+          <p class="muted small">
+            Será enviado um convite por email para ativar a conta.
+            A função atribuída será Mecânico.
+          </p>
+
+          <button id="createTeamButton" type="submit">
+            Criar conta e enviar convite
+          </button>
+        </form>
+      </details>
 
       <div id="teamList" class="stack"></div>
     </section>
