@@ -1,0 +1,296 @@
+
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="Gestão de frota AnjosEnergy">
+  <title>AnjosEnergy | Garagem</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="./">⚡ AnjosEnergy <span>Garagem</span></a>
+  <div class="topActions">
+    <span id="userBadge" class="muted small"></span>
+    <button id="authToggle" class="secondary">Entrar</button>
+  </div>
+</header>
+
+<main class="container">
+
+  <section id="configNotice" class="notice hidden">
+    <h2>Configuração em falta</h2>
+    <p>Verifica o URL e a chave publicável no app.js.</p>
+  </section>
+
+  <section id="loginPanel" class="panel loginPanel">
+    <p class="eyebrow">ÁREA EMPRESARIAL</p>
+    <h1>Gestão de frota e manutenção</h1>
+    <p class="muted">
+      Entra com a tua conta empresarial.
+    </p>
+
+    <form id="loginForm" class="stack">
+      <label>
+        Email
+        <input id="email" type="email"
+          autocomplete="username" required>
+      </label>
+
+      <label>
+        Palavra-passe
+        <input id="password" type="password"
+          autocomplete="current-password" required>
+      </label>
+
+      <button type="submit">Entrar</button>
+    </form>
+
+    <p id="loginStatus" class="status" role="status"></p>
+  </section>
+
+  <section id="appView" class="hidden">
+
+    <section class="hero">
+      <p class="eyebrow">ANJOSENERGY · GESTÃO INTERNA</p>
+      <h1>A frota, sob controlo.</h1>
+      <p>
+        Veículos, intervenções, quilometragem,
+        IPO e alertas num único lugar.
+      </p>
+    </section>
+
+    <section class="summaryGrid">
+      <article class="summaryCard">
+        <span>Veículos</span>
+        <strong id="vehicleCount">0</strong>
+      </article>
+
+      <article class="summaryCard">
+        <span>Avisos ativos</span>
+        <strong id="alertCount">0</strong>
+      </article>
+
+      <article class="summaryCard">
+        <span>Perfil</span>
+        <strong id="roleLabel">—</strong>
+      </article>
+    </section>
+
+    <section id="alertsPanel" class="panel hidden">
+      <div class="sectionHead">
+        <h2>Avisos de manutenção e IPO</h2>
+      </div>
+      <div id="alertsList" class="stack"></div>
+    </section>
+
+    <section class="sectionHead mainHeading">
+      <div>
+        <p class="eyebrow">FROTA</p>
+        <h2>Veículos</h2>
+      </div>
+      <button id="newVehicleBtn" class="masterOnly">
+        + Novo veículo
+      </button>
+    </section>
+
+    <form id="vehicleForm" class="panel stack hidden">
+      <h3 id="vehicleFormTitle">Novo veículo</h3>
+      <input id="vehicleId" type="hidden">
+
+      <div class="grid">
+        <label>Marca
+          <input id="make" required placeholder="Opel">
+        </label>
+
+        <label>Modelo
+          <input id="model" required placeholder="Frontera 2.8 TDI">
+        </label>
+
+        <label>Matrícula
+          <input id="plate">
+        </label>
+
+        <label>Ano
+          <input id="year" type="number"
+            min="1900" max="2100">
+        </label>
+
+        <label>Motor
+          <input id="engine">
+        </label>
+
+        <label>Combustível
+          <input id="fuel">
+        </label>
+
+        <label>Quilometragem atual
+          <input id="currentKm" type="number" min="0">
+        </label>
+
+        <label>Data limite da IPO
+          <input id="ipoDueDate" type="date">
+        </label>
+
+        <label>Código interno
+          <input id="code" placeholder="AE-001">
+        </label>
+      </div>
+
+      <label>Descrição pública
+        <textarea id="publicDescription" rows="2"></textarea>
+      </label>
+
+      <label>Notas internas
+        <textarea id="privateNotes" rows="2"></textarea>
+      </label>
+
+      <div class="actions">
+        <button type="submit">Guardar veículo</button>
+        <button type="button" id="cancelVehicle"
+          class="secondary">Cancelar</button>
+      </div>
+    </form>
+
+    <div id="vehicleList" class="cards"></div>
+
+    <section id="maintenancePanel" class="panel hidden">
+      <div class="sectionHead">
+        <h2 id="maintenanceHeading">Manutenção</h2>
+        <button id="addMaintenanceBtn">
+          + Registar intervenção
+        </button>
+      </div>
+
+      <form id="maintenanceForm" class="stack hidden">
+        <input id="maintenanceId" type="hidden">
+
+        <div class="grid">
+          <label>Data
+            <input id="serviceDate" type="date" required>
+          </label>
+
+          <label>Quilometragem
+            <input id="odometerKm" type="number"
+              min="0" required>
+          </label>
+
+          <label>Categoria
+            <input id="category" placeholder="Óleo, filtros…">
+          </label>
+
+          <label>Título
+            <input id="maintenanceTitle" required
+              placeholder="Mudança de óleo">
+          </label>
+
+          <label>Custo (€)
+            <input id="costEur" type="number"
+              min="0" step="0.01">
+          </label>
+
+          <label>Próxima manutenção (km)
+            <input id="nextServiceKm" type="number" min="0">
+          </label>
+
+          <label>Data da próxima manutenção
+            <input id="nextServiceDate" type="date">
+          </label>
+        </div>
+
+        <label>Peças / trabalho público
+          <textarea id="partsPublic" rows="2"></textarea>
+        </label>
+
+        <label>Notas internas
+          <textarea id="notesPrivate" rows="2"></textarea>
+        </label>
+
+        <div class="actions">
+          <button type="submit">Guardar intervenção</button>
+          <button type="button" id="cancelMaintenance"
+            class="secondary">Cancelar</button>
+        </div>
+      </form>
+
+      <div id="maintenanceList" class="stack"></div>
+    </section>
+
+    <section id="teamPanel" class="panel hidden">
+      <div class="sectionHead">
+        <h2>Equipa</h2>
+        <button id="refreshTeam" class="secondary">
+          Atualizar
+        </button>
+      </div>
+
+      <p class="muted small">
+        Cria primeiro as contas em Supabase →
+        Authentication → Users. Depois podes atribuir
+        os perfis nesta secção.
+      </p>
+
+      <div id="teamList" class="stack"></div>
+    </section>
+
+    <p id="status" class="status" role="status"></p>
+  </section>
+</main>
+
+<!-- Ficha e QR -->
+<dialog id="qrDialog">
+  <div class="sectionHead">
+    <h2>Ficha pública / QR</h2>
+    <button type="button" id="closeQr"
+      class="secondary">Fechar</button>
+  </div>
+
+  <div id="printFicha">
+    <h2 id="qrVehicleTitle">Ficha do veículo</h2>
+
+    <div class="qrContainer">
+      <img id="qrImage"
+        alt="Código QR da ficha pública"
+        width="260" height="260">
+    </div>
+
+    <p class="muted small">
+      Digitaliza para consultar os dados públicos
+      e o histórico publicado.
+    </p>
+
+    <label for="qrUrl">Endereço público</label>
+    <input id="qrUrl" readonly>
+
+    <p id="qrHelp" class="muted small"></p>
+  </div>
+
+  <div class="actions">
+    <button type="button" id="copyQrUrl">
+      Copiar endereço
+    </button>
+    <button type="button" id="printQr" class="secondary">
+      Imprimir ficha
+    </button>
+    <button type="button" id="openPublic" class="secondary">
+      Abrir ficha
+    </button>
+  </div>
+</dialog>
+
+<!-- Ficha pública aberta através do QR -->
+<section id="publicView" class="container hidden">
+  <a href="./">← Início</a>
+  <div id="publicVehicle"></div>
+  <h2>Histórico público</h2>
+  <div id="publicMaintenance" class="stack"></div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./app.js"></script>
+
+</body>
+</html>
