@@ -19,10 +19,8 @@ let maintenanceRecords = [];
 
 const $ = (id) => document.getElementById(id);
 
-/* ---------- Mensagens e utilitários ---------- */
-
-function notify(message, type = "info") {
-  const target = $("status") || $("loginStatus");
+function notify(message, type = "info", targetId = "status") {
+  const target = $(targetId) || $("status") || $("loginStatus");
 
   if (target) {
     target.textContent = message;
@@ -50,27 +48,30 @@ function isMaster() {
   return currentProfile?.role === "master";
 }
 
+function setVisible(id, visible) {
+  $(id)?.classList.toggle("hidden", !visible);
+}
+
 /* ---------- Interface ---------- */
 
 function showLoggedOut() {
-  $("loginPanel")?.classList.remove("hidden");
-  $("appView")?.classList.add("hidden");
-  $("publicView")?.classList.add("hidden");
+  setVisible("loginPanel", true);
+  setVisible("appView", false);
+  setVisible("publicView", false);
 
   if ($("userBadge")) $("userBadge").textContent = "";
   if ($("authToggle")) $("authToggle").textContent = "Entrar";
 }
 
 function showLoggedIn() {
-  $("loginPanel")?.classList.add("hidden");
-  $("appView")?.classList.remove("hidden");
-  $("publicView")?.classList.add("hidden");
+  setVisible("loginPanel", false);
+  setVisible("passwordPanel", false);
+  setVisible("appView", true);
+  setVisible("publicView", false);
 
   if ($("userBadge")) {
     $("userBadge").textContent =
-      currentProfile?.full_name ||
-      currentUser?.email ||
-      "";
+      currentProfile?.full_name || currentUser?.email || "";
   }
 
   if ($("authToggle")) $("authToggle").textContent = "Sair";
@@ -83,14 +84,18 @@ function showLoggedIn() {
     element.classList.toggle("hidden", !isMaster());
   });
 
-  $("teamPanel")?.classList.toggle("hidden", !isMaster());
+  setVisible("teamPanel", isMaster());
 }
 
 /* ---------- Inicialização ---------- */
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (!window.supabase?.createClient) {
-    notify("Não foi possível carregar a biblioteca Supabase.", "error");
+    notify(
+      "Não foi possível carregar a biblioteca Supabase.",
+      "error",
+      "loginStatus"
+    );
     return;
   }
 
@@ -101,22 +106,57 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   bindEvents();
 
+  const params = new URLSearchParams(location.search);
+  const hashParams = new URLSearchParams(
+    location.hash.replace(/^#/, "")
+  );
+
+  const hasInviteToken =
+    hashParams.has("access_token") ||
+    hashParams.get("type") === "invite" ||
+    hashParams.get("type") === "recovery" ||
+    params.has("code");
+
+  if (hasInviteToken) {
+    setVisible("loginPanel", false);
+    setVisible("appView", false);
+    setVisible("passwordPanel", true);
+  }
+
   const { data, error } = await db.auth.getSession();
 
   if (error) {
     notify("Erro ao recuperar sessão: " + error.message, "error");
-    showLoggedOut();
     return;
   }
 
   if (data.session?.user) {
-    await loadProfile(data.session.user);
-  } else {
+    if (!hasInviteToken) {
+      await loadProfile(data.session.user);
+    } else {
+      setVisible("passwordPanel", true);
+      setVisible("loginPanel", false);
+    }
+  } else if (!hasInviteToken) {
     showLoggedOut();
   }
 
-  db.auth.onAuthStateChange((_event, session) => {
+  db.auth.onAuthStateChange((event, session) => {
     setTimeout(async () => {
+      if (
+        event === "PASSWORD_RECOVERY" ||
+        event === "SIGNED_IN" &&
+        (
+          new URLSearchParams(location.hash.replace(/^#/, "")).has("access_token") ||
+          new URLSearchParams(location.hash.replace(/^#/, "")).get("type") === "invite"
+        )
+      ) {
+        setVisible("loginPanel", false);
+        setVisible("appView", false);
+        setVisible("passwordPanel", true);
+        return;
+      }
+
       if (session?.user) {
         await loadProfile(session.user);
       } else {
@@ -130,11 +170,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }, 0);
   });
 
-  const params = new URLSearchParams(location.search);
-  const publicCode = params.get("vehicle");
-
-  if (publicCode) {
-    await showPublicVehicle(publicCode);
+  if (params.get("vehicle")) {
+    await showPublicVehicle(params.get("vehicle"));
   }
 });
 
@@ -145,7 +182,6 @@ function bindEvents() {
     event.preventDefault();
 
     const button = $("loginForm").querySelector('[type="submit"]');
-
     if (button) {
       button.disabled = true;
       button.textContent = "A entrar...";
@@ -157,14 +193,13 @@ function bindEvents() {
         password: $("password").value
       });
 
-      if (error) {
-        notify(
-          "Falha no login. Confirma o email e a palavra-passe.",
-          "error"
-        );
-      }
+      if (error) throw error;
     } catch (error) {
-      notify("Erro no login: " + error.message, "error");
+      notify(
+        "Falha no login: " + error.message,
+        "error",
+        "loginStatus"
+      );
     } finally {
       if (button) {
         button.disabled = false;
@@ -181,11 +216,10 @@ function bindEvents() {
     }
 
     const { error } = await db.auth.signOut();
-
-    if (error) {
-      notify("Não foi possível terminar a sessão.", "error");
-    }
+    if (error) notify("Não foi possível terminar a sessão.", "error");
   });
+
+  $("passwordForm")?.addEventListener("submit", saveNewPassword);
 
   $("newVehicleBtn")?.addEventListener("click", () => {
     if (!isMaster()) {
@@ -194,7 +228,7 @@ function bindEvents() {
     }
 
     resetVehicleForm();
-    $("vehicleForm")?.classList.remove("hidden");
+    setVisible("vehicleForm", true);
     $("vehicleForm")?.scrollIntoView({ behavior: "smooth" });
   });
 
@@ -207,25 +241,20 @@ function bindEvents() {
       return;
     }
 
-    $("maintenanceForm")?.classList.remove("hidden");
+    setVisible("maintenanceForm", true);
     $("maintenanceForm")?.scrollIntoView({ behavior: "smooth" });
   });
 
   $("cancelMaintenance")?.addEventListener("click", () => {
     $("maintenanceForm")?.reset();
-
-    if ($("maintenanceId")) {
-      $("maintenanceId").value = "";
-    }
-
-    $("maintenanceForm")?.classList.add("hidden");
+    if ($("maintenanceId")) $("maintenanceId").value = "";
+    setVisible("maintenanceForm", false);
   });
 
   $("maintenanceForm")?.addEventListener("submit", saveMaintenance);
+  $("refreshTeam")?.addEventListener("click", loadTeam);
 
-  $("closeQr")?.addEventListener("click", () => {
-    $("qrDialog")?.close();
-  });
+  $("closeQr")?.addEventListener("click", () => $("qrDialog")?.close());
 
   $("copyQrUrl")?.addEventListener("click", async () => {
     try {
@@ -240,12 +269,89 @@ function bindEvents() {
   $("printQr")?.addEventListener("click", () => window.print());
 
   $("openPublic")?.addEventListener("click", () => {
-    if ($("qrUrl")?.value) {
-      window.open($("qrUrl").value, "_blank");
-    }
+    if ($("qrUrl")?.value) window.open($("qrUrl").value, "_blank");
   });
 
-  $("refreshTeam")?.addEventListener("click", loadTeam);
+  bindCreateTeamForm();
+}
+
+/* ---------- Palavra-passe / convite ---------- */
+
+async function saveNewPassword(event) {
+  event.preventDefault();
+
+  const password = $("newPassword")?.value || "";
+  const confirmation = $("confirmPassword")?.value || "";
+  const button = $("savePasswordButton");
+
+  if (password.length < 8) {
+    notify(
+      "A palavra-passe deve ter pelo menos 8 caracteres.",
+      "error",
+      "passwordStatus"
+    );
+    return;
+  }
+
+  if (password !== confirmation) {
+    notify(
+      "As palavras-passe não coincidem.",
+      "error",
+      "passwordStatus"
+    );
+    return;
+  }
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "A guardar...";
+  }
+
+  try {
+    const { data: sessionData, error: sessionError } =
+      await db.auth.getSession();
+
+    if (sessionError) throw sessionError;
+
+    if (!sessionData.session) {
+      throw new Error(
+        "O convite não criou uma sessão válida. " +
+        "Abre novamente o link mais recente do email."
+      );
+    }
+
+    const { error } = await db.auth.updateUser({
+      password
+    });
+
+    if (error) throw error;
+
+    notify(
+      "Palavra-passe definida. A entrar na aplicação...",
+      "success",
+      "passwordStatus"
+    );
+
+    $("passwordForm")?.reset();
+
+    const { data } = await db.auth.getUser();
+
+    if (data.user) {
+      await loadProfile(data.user);
+    }
+  } catch (error) {
+    console.error("Erro ao definir palavra-passe:", error);
+    notify(
+      "Não foi possível definir a palavra-passe: " + error.message,
+      "error",
+      "passwordStatus"
+    );
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Guardar palavra-passe";
+    }
+  }
 }
 
 /* ---------- Perfil ---------- */
@@ -269,7 +375,6 @@ async function loadProfile(user) {
         : "A conta não tem perfil associado. Contacta o administrador.",
       "error"
     );
-
     return;
   }
 
@@ -278,134 +383,13 @@ async function loadProfile(user) {
 
   await loadVehicles();
 
-  if (isMaster()) {
-    await loadTeam();
-  }
+  if (isMaster()) await loadTeam();
 }
 
 /* ---------- Gestão da equipa ---------- */
 
-async function loadTeam() {
-  if (!db || !currentUser || !isMaster()) return;
-
-  const list = $("teamList");
-  const button = $("refreshTeam");
-
-  if (!list) return;
-
-  if (button) button.disabled = true;
-  list.textContent = "A carregar equipa...";
-
-  try {
-    const { data, error } = await db.rpc("master_list_profiles");
-
-    if (error) throw error;
-
-    if (!data || data.length === 0) {
-      list.textContent = "Não existem perfis para apresentar.";
-      return;
-    }
-
-    list.innerHTML = data.map((member) => {
-      const role =
-        member.role === "master" ? "master" : "mechanic";
-
-      const ownAccount = member.id === currentUser.id;
-
-      return `
-        <article class="panel team-card">
-          <h3>${escapeHTML(member.full_name || "Sem nome")}</h3>
-          <p>${escapeHTML(member.email || "Email não indicado")}</p>
-          <p>Função atual:
-            <strong>
-              ${role === "master" ? "Master" : "Mecânico"}
-            </strong>
-          </p>
-
-          <label>
-            Nova função
-            <select data-team-role="${escapeHTML(member.id)}"
-              ${ownAccount ? "disabled" : ""}>
-              <option value="master"
-                ${role === "master" ? "selected" : ""}>
-                Master
-              </option>
-              <option value="mechanic"
-                ${role === "mechanic" ? "selected" : ""}>
-                Mecânico
-              </option>
-            </select>
-          </label>
-
-          <button type="button"
-            data-team-save="${escapeHTML(member.id)}"
-            ${ownAccount ? "disabled" : ""}>
-            Guardar função
-          </button>
-
-          ${ownAccount
-            ? '<p class="muted small">Esta é a tua própria conta.</p>'
-            : ""}
-        </article>
-      `;
-    }).join("");
-
-    list.querySelectorAll("[data-team-save]").forEach((saveButton) => {
-      saveButton.addEventListener("click", async () => {
-        const userId = saveButton.dataset.teamSave;
-
-        const select = list.querySelector(
-          `[data-team-role="${userId}"]`
-        );
-
-        if (!isMaster() || userId === currentUser.id) return;
-
-        const newRole = select?.value;
-
-        if (!["master", "mechanic"].includes(newRole)) {
-          notify("Função inválida.", "error");
-          return;
-        }
-
-        saveButton.disabled = true;
-        saveButton.textContent = "A guardar...";
-
-        try {
-          const { error } = await db.rpc("master_set_profile_role", {
-            p_user_id: userId,
-            p_role: newRole
-          });
-
-          if (error) throw error;
-
-          notify("Função atualizada.", "success");
-          await loadTeam();
-        } catch (error) {
-          console.error("Erro ao alterar função:", error);
-          notify(
-            "Erro ao alterar função: " + error.message,
-            "error"
-          );
-        } finally {
-          saveButton.disabled = false;
-          saveButton.textContent = "Guardar função";
-        }
-      });
-    });
-  } catch (error) {
-    console.error("Erro ao carregar equipa:", error);
-    list.textContent = "Erro ao carregar equipa: " + error.message;
-    notify("Não foi possível carregar a equipa.", "error");
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
-/* ---------- Criar funcionário ---------- */
-
 function bindCreateTeamForm() {
   const form = $("createTeamForm");
-
   if (!form || form.dataset.bound === "true") return;
 
   form.dataset.bound = "true";
@@ -413,7 +397,7 @@ function bindCreateTeamForm() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    if (!db || !currentUser || !isMaster()) {
+    if (!currentUser || !isMaster()) {
       notify("Só o Master pode criar funcionários.", "error");
       return;
     }
@@ -446,29 +430,19 @@ function bindCreateTeamForm() {
 
       if (error) {
         let message = error.message;
-
         try {
           const details = await error.context?.json();
-
-          if (details?.error) {
-            message = details.error;
-          }
-        } catch {
-          // Mantém a mensagem original.
-        }
-
+          if (details?.error) message = details.error;
+        } catch {}
         throw new Error(message);
       }
 
       if (!data?.success) {
-        throw new Error(
-          data?.error || "Não foi possível criar a conta."
-        );
+        throw new Error(data?.error || "Não foi possível criar a conta.");
       }
 
       notify(
-        data.message ||
-          "Funcionário criado. Verifica o email de convite.",
+        data.message || "Convite enviado por email.",
         "success"
       );
 
@@ -476,11 +450,7 @@ function bindCreateTeamForm() {
       await loadTeam();
     } catch (error) {
       console.error("Erro ao criar funcionário:", error);
-
-      notify(
-        "Erro ao criar funcionário: " + error.message,
-        "error"
-      );
+      notify("Erro ao criar funcionário: " + error.message, "error");
     } finally {
       if (button) {
         button.disabled = false;
@@ -488,6 +458,148 @@ function bindCreateTeamForm() {
       }
     }
   });
+}
+
+async function loadTeam() {
+  if (!db || !currentUser || !isMaster()) return;
+
+  const list = $("teamList");
+  const refresh = $("refreshTeam");
+  if (!list) return;
+
+  if (refresh) refresh.disabled = true;
+  list.textContent = "A carregar equipa...";
+
+  try {
+    const { data, error } = await db.rpc("master_list_profiles");
+    if (error) throw error;
+
+    if (!data?.length) {
+      list.textContent = "Não existem perfis para apresentar.";
+      return;
+    }
+
+    list.innerHTML = data.map((member) => {
+      const role = member.role === "master" ? "master" : "mechanic";
+      const ownAccount = member.id === currentUser.id;
+
+      return `
+        <article class="panel team-card">
+          <h3>${escapeHTML(member.full_name || "Sem nome")}</h3>
+          <p>${escapeHTML(member.email || "Email não indicado")}</p>
+          <p>Função:
+            <strong>${role === "master" ? "Master" : "Mecânico"}</strong>
+          </p>
+
+          <label>Nova função
+            <select data-team-role="${escapeHTML(member.id)}"
+              ${ownAccount ? "disabled" : ""}>
+              <option value="master" ${role === "master" ? "selected" : ""}>
+                Master
+              </option>
+              <option value="mechanic" ${role === "mechanic" ? "selected" : ""}>
+                Mecânico
+              </option>
+            </select>
+          </label>
+
+          <div class="actions">
+            <button type="button"
+              data-team-save="${escapeHTML(member.id)}"
+              ${ownAccount ? "disabled" : ""}>
+              Guardar função
+            </button>
+
+            <button type="button"
+              class="secondary"
+              data-team-delete="${escapeHTML(member.id)}"
+              ${ownAccount ? "disabled" : ""}>
+              Apagar funcionário
+            </button>
+          </div>
+
+          ${ownAccount
+            ? '<p class="muted small">Esta é a tua própria conta.</p>'
+            : ""}
+        </article>
+      `;
+    }).join("");
+
+    list.querySelectorAll("[data-team-save]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const userId = button.dataset.teamSave;
+        const select = list.querySelector(`[data-team-role="${userId}"]`);
+        const newRole = select?.value;
+
+        if (!isMaster() || userId === currentUser.id) return;
+
+        if (!["master", "mechanic"].includes(newRole)) {
+          notify("Função inválida.", "error");
+          return;
+        }
+
+        button.disabled = true;
+
+        try {
+          const { error } = await db.rpc("master_set_profile_role", {
+            p_user_id: userId,
+            p_role: newRole
+          });
+
+          if (error) throw error;
+
+          notify("Função atualizada.", "success");
+          await loadTeam();
+        } catch (error) {
+          notify("Erro ao alterar função: " + error.message, "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    list.querySelectorAll("[data-team-delete]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const userId = button.dataset.teamDelete;
+        if (!isMaster() || userId === currentUser.id) return;
+
+        if (!confirm(
+          "Tens a certeza de que queres apagar este funcionário? " +
+          "Esta operação não pode ser desfeita."
+        )) return;
+
+        button.disabled = true;
+
+        try {
+          const { data, error } = await db.functions.invoke(
+            "delete-team-user",
+            { body: { user_id: userId } }
+          );
+
+          if (error) throw error;
+          if (!data?.success) {
+            throw new Error(data?.error || "Não foi possível apagar a conta.");
+          }
+
+          notify("Funcionário apagado.", "success");
+          await loadTeam();
+        } catch (error) {
+          notify(
+            "A eliminação não está disponível ou falhou: " + error.message,
+            "error"
+          );
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+  } catch (error) {
+    console.error("Erro ao carregar equipa:", error);
+    list.textContent = "Erro ao carregar equipa: " + error.message;
+    notify("Não foi possível carregar a equipa.", "error");
+  } finally {
+    if (refresh) refresh.disabled = false;
+  }
 }
 
 /* ---------- Veículos ---------- */
@@ -508,16 +620,14 @@ async function loadVehicles() {
   renderAlerts();
 
   if (selectedVehicle) {
-    const updated = vehicles.find(
-      (vehicle) => vehicle.id === selectedVehicle.id
-    );
+    const updated = vehicles.find((v) => v.id === selectedVehicle.id);
 
     if (updated) {
       selectedVehicle = updated;
       await loadMaintenance(updated);
     } else {
       selectedVehicle = null;
-      $("maintenancePanel")?.classList.add("hidden");
+      setVisible("maintenancePanel", false);
     }
   }
 }
@@ -543,12 +653,8 @@ function renderVehicles() {
       <p>Matrícula:
         <strong>${escapeHTML(vehicle.plate || "—")}</strong>
       </p>
-      <p>Quilometragem:
-        ${escapeHTML(vehicle.current_km ?? 0)} km
-      </p>
-      <p>IPO:
-        ${escapeHTML(vehicle.ipo_due_date || "Não indicada")}
-      </p>
+      <p>Quilometragem: ${escapeHTML(vehicle.current_km ?? 0)} km</p>
+      <p>IPO: ${escapeHTML(vehicle.ipo_due_date || "Não indicada")}</p>
 
       <div class="actions">
         <button data-action="select" data-id="${escapeHTML(vehicle.id)}">
@@ -557,15 +663,16 @@ function renderVehicles() {
 
         ${isMaster() ? `
           <button class="secondary"
-            data-action="edit"
-            data-id="${escapeHTML(vehicle.id)}">
+            data-action="edit" data-id="${escapeHTML(vehicle.id)}">
             Editar
           </button>
-
           <button class="secondary"
-            data-action="qr"
-            data-id="${escapeHTML(vehicle.id)}">
+            data-action="qr" data-id="${escapeHTML(vehicle.id)}">
             Ficha / QR
+          </button>
+          <button class="secondary"
+            data-action="delete" data-id="${escapeHTML(vehicle.id)}">
+            Apagar veículo
           </button>
         ` : ""}
       </div>
@@ -575,21 +682,17 @@ function renderVehicles() {
   list.querySelectorAll("button[data-action]").forEach((button) => {
     button.addEventListener("click", async () => {
       const vehicle = vehicles.find(
-        (item) => String(item.id) === button.dataset.id
+        (v) => String(v.id) === button.dataset.id
       );
 
       if (!vehicle) return;
 
       if (button.dataset.action === "select") {
         selectedVehicle = vehicle;
-
-        $("maintenancePanel")?.classList.remove("hidden");
-
+        setVisible("maintenancePanel", true);
         $("maintenanceHeading").textContent =
           `Manutenção — ${vehicle.make} ${vehicle.model}`;
-
-        $("maintenanceForm")?.classList.add("hidden");
-
+        setVisible("maintenanceForm", false);
         await loadMaintenance(vehicle);
       }
 
@@ -600,8 +703,52 @@ function renderVehicles() {
       if (button.dataset.action === "qr" && isMaster()) {
         openQr(vehicle);
       }
+
+      if (button.dataset.action === "delete" && isMaster()) {
+        await deleteVehicle(vehicle);
+      }
     });
   });
+}
+
+async function deleteVehicle(vehicle) {
+  if (!isMaster()) {
+    notify("Só o Master pode apagar veículos.", "error");
+    return;
+  }
+
+  const description = `${vehicle.make} ${vehicle.model}`;
+
+  if (!confirm(
+    `Apagar ${description} e todo o histórico de manutenção associado? ` +
+    "Esta operação não pode ser desfeita."
+  )) return;
+
+  try {
+    const { data, error } = await db.functions.invoke(
+      "delete-vehicle",
+      { body: { vehicle_id: vehicle.id } }
+    );
+
+    if (error) throw error;
+    if (!data?.success) {
+      throw new Error(data?.error || "Não foi possível apagar o veículo.");
+    }
+
+    if (selectedVehicle?.id === vehicle.id) {
+      selectedVehicle = null;
+      maintenanceRecords = [];
+      setVisible("maintenancePanel", false);
+    }
+
+    notify("Veículo apagado.", "success");
+    await loadVehicles();
+  } catch (error) {
+    notify(
+      "A eliminação não está disponível ou falhou: " + error.message,
+      "error"
+    );
+  }
 }
 
 function fillVehicleForm(vehicle) {
@@ -619,20 +766,17 @@ function fillVehicleForm(vehicle) {
   $("privateNotes").value = vehicle.private_notes || "";
 
   $("vehicleFormTitle").textContent = "Editar veículo";
-  $("vehicleForm").classList.remove("hidden");
-  $("vehicleForm").scrollIntoView({ behavior: "smooth" });
+  setVisible("vehicleForm", true);
+  $("vehicleForm")?.scrollIntoView({ behavior: "smooth" });
 }
 
 function resetVehicleForm() {
   $("vehicleForm")?.reset();
-
   if ($("vehicleId")) $("vehicleId").value = "";
-
   if ($("vehicleFormTitle")) {
     $("vehicleFormTitle").textContent = "Novo veículo";
   }
-
-  $("vehicleForm")?.classList.add("hidden");
+  setVisible("vehicleForm", false);
 }
 
 async function saveVehicle(event) {
@@ -652,9 +796,7 @@ async function saveVehicle(event) {
     year: $("year").value ? Number($("year").value) : null,
     engine: $("engine").value.trim() || null,
     fuel: $("fuel").value.trim() || null,
-    current_km: $("currentKm").value
-      ? Number($("currentKm").value)
-      : 0,
+    current_km: $("currentKm").value ? Number($("currentKm").value) : 0,
     ipo_due_date: $("ipoDueDate").value || null,
     code: $("code").value.trim() || null,
     public_description: $("publicDescription").value.trim() || null,
@@ -709,10 +851,8 @@ function renderMaintenance() {
   list.innerHTML = maintenanceRecords.map((record) => `
     <article class="panel maintenance-card">
       <h3>${escapeHTML(record.title)}</h3>
-      <p>
-        Data: ${escapeHTML(record.service_date || "—")} ·
-        ${escapeHTML(record.odometer_km ?? "—")} km
-      </p>
+      <p>Data: ${escapeHTML(record.service_date || "—")} ·
+        ${escapeHTML(record.odometer_km ?? "—")} km</p>
       <p>Categoria: ${escapeHTML(record.category || "—")}</p>
       <p>Custo: ${
         record.cost_eur == null
@@ -743,15 +883,13 @@ async function saveMaintenance(event) {
     odometer_km: Number($("odometerKm").value),
     category: $("category").value.trim() || null,
     title: $("maintenanceTitle").value.trim(),
-    cost_eur: $("costEur").value
-      ? Number($("costEur").value)
-      : null,
+    cost_eur: $("costEur").value ? Number($("costEur").value) : null,
     next_service_km: $("nextServiceKm").value
       ? Number($("nextServiceKm").value)
       : null,
     next_service_date: $("nextServiceDate").value || null,
     parts_public: $("partsPublic").value.trim() || null,
-    notes_private: $("notesPrivate").value.trim() || null,
+    notes_private: $("maintenanceNotesPrivate")?.value.trim() || null,
     owner_id: currentUser.id
   };
 
@@ -762,17 +900,11 @@ async function saveMaintenance(event) {
     : await db.from("maintenance_records").insert(record);
 
   if (result.error) {
-    notify(
-      "Erro ao guardar intervenção: " + result.error.message,
-      "error"
-    );
+    notify("Erro ao guardar intervenção: " + result.error.message, "error");
     return;
   }
 
-  if (
-    record.odometer_km >
-    Number(selectedVehicle.current_km || 0)
-  ) {
+  if (record.odometer_km > Number(selectedVehicle.current_km || 0)) {
     const { error } = await db
       .from("vehicles")
       .update({ current_km: record.odometer_km })
@@ -787,19 +919,13 @@ async function saveMaintenance(event) {
   }
 
   $("maintenanceForm")?.reset();
-
-  if ($("maintenanceId")) {
-    $("maintenanceId").value = "";
-  }
-
-  $("maintenanceForm")?.classList.add("hidden");
+  if ($("maintenanceId")) $("maintenanceId").value = "";
+  setVisible("maintenanceForm", false);
 
   notify("Intervenção guardada.", "success");
   await loadVehicles();
 
-  if (selectedVehicle) {
-    await loadMaintenance(selectedVehicle);
-  }
+  if (selectedVehicle) await loadMaintenance(selectedVehicle);
 }
 
 /* ---------- Alertas de IPO ---------- */
@@ -836,7 +962,6 @@ function renderAlerts() {
 
   const panel = $("alertsPanel");
   const list = $("alertsList");
-
   if (!panel || !list) return;
 
   panel.classList.toggle("hidden", alerts.length === 0);
@@ -849,24 +974,17 @@ function renderAlerts() {
   `).join("");
 }
 
-/* ---------- Ficha QR e área pública ---------- */
+/* ---------- QR e área pública ---------- */
 
 function openQr(vehicle) {
   const url = new URL(location.href);
-
   url.search = "";
-  url.searchParams.set(
-    "vehicle",
-    vehicle.public_id || vehicle.id
-  );
+  url.searchParams.set("vehicle", vehicle.public_id || vehicle.id);
 
-  $("qrVehicleTitle").textContent =
-    `${vehicle.make} ${vehicle.model}`;
-
+  $("qrVehicleTitle").textContent = `${vehicle.make} ${vehicle.model}`;
   $("qrUrl").value = url.href;
-
   $("qrHelp").textContent =
-    "A ficha pública só estará ativa depois de ligar e testar a função SQL pública.";
+    "A ficha pública ainda necessita de ligação à função SQL pública.";
 
   $("qrImage").src =
     "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" +
@@ -876,16 +994,15 @@ function openQr(vehicle) {
 }
 
 async function showPublicVehicle(code) {
-  $("loginPanel")?.classList.add("hidden");
-  $("appView")?.classList.add("hidden");
-  $("publicView")?.classList.remove("hidden");
+  setVisible("loginPanel", false);
+  setVisible("appView", false);
+  setVisible("publicView", true);
 
   $("publicVehicle").textContent =
     "A ficha pública ainda não está ligada à função SQL. " +
     "Por segurança, não são apresentados dados do veículo.";
 
   $("publicMaintenance").textContent = "";
-
   console.info("Pedido de ficha pública:", code);
 }
 
@@ -900,7 +1017,3 @@ window.GaragemOnline = {
   reload: loadVehicles,
   logout: () => db?.auth.signOut()
 };
-
-/* ---------- Inicialização do formulário da equipa ---------- */
-
-document.addEventListener("DOMContentLoaded", bindCreateTeamForm);
