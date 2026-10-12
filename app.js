@@ -1,8 +1,8 @@
 
-/* ==========================================
-   GARAGEM ONLINE — ANJOSENERGY
-   Aplicação empresarial
-   ========================================== */
+// ============================================
+// GARAGEM ONLINE — ANJOSENERGY
+// Aplicação empresarial
+// ============================================
 
 const SUPABASE_URL =
   "https://bsnbjpenrsubqoatqqne.supabase.co";
@@ -17,9 +17,9 @@ let vehicles = [];
 let selectedVehicle = null;
 let maintenanceRecords = [];
 
-/* ---------- Elementos e mensagens ---------- */
-
 const $ = (id) => document.getElementById(id);
+
+// ---------- Mensagens e utilitários ----------
 
 function notify(message, type = "info") {
   const target = $("status") || $("loginStatus");
@@ -50,36 +50,43 @@ function isMaster() {
   return currentProfile?.role === "master";
 }
 
+// ---------- Interface ----------
+
 function showLoggedOut() {
   $("loginPanel")?.classList.remove("hidden");
   $("appView")?.classList.add("hidden");
-  $("userBadge") && ($("userBadge").textContent = "");
-  $("authToggle") && ($("authToggle").textContent = "Entrar");
+  $("publicView")?.classList.add("hidden");
+
+  if ($("userBadge")) $("userBadge").textContent = "";
+  if ($("authToggle")) $("authToggle").textContent = "Entrar";
 }
 
 function showLoggedIn() {
   $("loginPanel")?.classList.add("hidden");
   $("appView")?.classList.remove("hidden");
-  $("userBadge") && (
+  $("publicView")?.classList.add("hidden");
+
+  if ($("userBadge")) {
     $("userBadge").textContent =
       currentProfile?.full_name ||
-      currentProfile?.email ||
       currentUser?.email ||
-      ""
-  );
-  $("authToggle") && ($("authToggle").textContent = "Sair");
+      "";
+  }
 
-  $("roleLabel") && (
-    $("roleLabel").textContent =
-      isMaster() ? "Master" : "Mecânico"
-  );
+  if ($("authToggle")) $("authToggle").textContent = "Sair";
+
+  if ($("roleLabel")) {
+    $("roleLabel").textContent = isMaster() ? "Master" : "Mecânico";
+  }
 
   document.querySelectorAll(".masterOnly").forEach((element) => {
     element.classList.toggle("hidden", !isMaster());
   });
+
+  $("teamPanel")?.classList.toggle("hidden", !isMaster());
 }
 
-/* ---------- Inicialização ---------- */
+// ---------- Arranque ----------
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (!window.supabase?.createClient) {
@@ -97,7 +104,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const { data, error } = await db.auth.getSession();
 
   if (error) {
-    notify("Erro ao recuperar a sessão: " + error.message, "error");
+    notify("Erro ao recuperar sessão: " + error.message, "error");
     showLoggedOut();
     return;
   }
@@ -117,12 +124,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentProfile = null;
         vehicles = [];
         selectedVehicle = null;
+        maintenanceRecords = [];
         showLoggedOut();
       }
     }, 0);
   });
 
-  // Ficha pública aberta por um endereço com ?vehicle=...
   const params = new URLSearchParams(location.search);
   const publicCode = params.get("vehicle");
 
@@ -131,24 +138,37 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
-/* ---------- Autenticação ---------- */
+// ---------- Login e perfil ----------
 
 function bindEvents() {
   $("loginForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const button = $("loginForm").querySelector('[type="submit"]');
-    if (button) button.disabled = true;
+    const status = $("loginStatus");
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "A entrar...";
+    }
+
+    if (status) {
+      status.textContent = "";
+      status.hidden = false;
+    }
 
     const { error } = await db.auth.signInWithPassword({
       email: $("email").value.trim(),
       password: $("password").value
     });
 
-    if (button) button.disabled = false;
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Entrar";
+    }
 
     if (error) {
-      notify("Falha no login. Confirma as credenciais e a conta.", "error");
+      notify("Falha no login. Confirma o email e a palavra-passe.", "error");
     }
   });
 
@@ -160,35 +180,45 @@ function bindEvents() {
     }
 
     const { error } = await db.auth.signOut();
+
     if (error) notify("Não foi possível terminar a sessão.", "error");
   });
 
   $("newVehicleBtn")?.addEventListener("click", () => {
-    if (!isMaster()) return notify("Apenas o Master pode criar veículos.", "error");
+    if (!isMaster()) {
+      notify("Apenas o Master pode criar veículos.", "error");
+      return;
+    }
+
     resetVehicleForm();
     $("vehicleForm")?.classList.remove("hidden");
     $("vehicleForm")?.scrollIntoView({ behavior: "smooth" });
   });
 
   $("cancelVehicle")?.addEventListener("click", resetVehicleForm);
-
   $("vehicleForm")?.addEventListener("submit", saveVehicle);
 
   $("addMaintenanceBtn")?.addEventListener("click", () => {
-    if (!selectedVehicle) return;
+    if (!selectedVehicle) {
+      notify("Seleciona primeiro um veículo.");
+      return;
+    }
+
     $("maintenanceForm")?.classList.remove("hidden");
     $("maintenanceForm")?.scrollIntoView({ behavior: "smooth" });
   });
 
   $("cancelMaintenance")?.addEventListener("click", () => {
     $("maintenanceForm")?.reset();
-    $("maintenanceId").value = "";
+    if ($("maintenanceId")) $("maintenanceId").value = "";
     $("maintenanceForm")?.classList.add("hidden");
   });
 
   $("maintenanceForm")?.addEventListener("submit", saveMaintenance);
 
-  $("closeQr")?.addEventListener("click", () => $("qrDialog")?.close());
+  $("closeQr")?.addEventListener("click", () => {
+    $("qrDialog")?.close();
+  });
 
   $("copyQrUrl")?.addEventListener("click", async () => {
     try {
@@ -206,9 +236,7 @@ function bindEvents() {
     if ($("qrUrl")?.value) window.open($("qrUrl").value, "_blank");
   });
 
-  $("refreshTeam")?.addEventListener("click", () => {
-    notify("A gestão da equipa será ligada depois de confirmar as funções SQL.");
-  });
+  $("refreshTeam")?.addEventListener("click", loadTeam);
 }
 
 async function loadProfile(user) {
@@ -216,18 +244,21 @@ async function loadProfile(user) {
 
   const { data, error } = await db
     .from("profiles")
-    .select("id, email, full_name, role")
+    .select("id, full_name, role")
     .eq("id", user.id)
     .maybeSingle();
 
   if (error || !data) {
     currentProfile = null;
     showLoggedOut();
+
     notify(
-      error ? "Erro ao carregar perfil: " + error.message :
-      "Esta conta não tem perfil associado.",
+      error
+        ? "Erro ao carregar perfil: " + error.message
+        : "A conta não tem perfil associado. Contacta o administrador.",
       "error"
     );
+
     return;
   }
 
@@ -236,7 +267,16 @@ async function loadProfile(user) {
   await loadVehicles();
 }
 
-/* ---------- Veículos ---------- */
+async function loadTeam() {
+  if (!isMaster()) return;
+
+  notify(
+    "A gestão de perfis necessita de confirmar as funções SQL existentes.",
+    "info"
+  );
+}
+
+// ---------- Veículos ----------
 
 async function loadVehicles() {
   const { data, error } = await db
@@ -255,6 +295,7 @@ async function loadVehicles() {
 
   if (selectedVehicle) {
     const updated = vehicles.find(v => v.id === selectedVehicle.id);
+
     if (updated) {
       selectedVehicle = updated;
       await loadMaintenance(updated);
@@ -266,13 +307,16 @@ async function loadVehicles() {
 }
 
 function renderVehicles() {
-  $("vehicleCount") && ($("vehicleCount").textContent = vehicles.length);
+  if ($("vehicleCount")) {
+    $("vehicleCount").textContent = vehicles.length;
+  }
 
   const list = $("vehicleList");
   if (!list) return;
 
   if (!vehicles.length) {
-    list.innerHTML = '<p class="muted">Ainda não existem veículos registados.</p>';
+    list.innerHTML =
+      '<p class="muted">Ainda não existem veículos registados.</p>';
     return;
   }
 
@@ -284,10 +328,16 @@ function renderVehicles() {
       <p>Quilometragem: ${escapeHTML(v.current_km ?? 0)} km</p>
       <p>IPO: ${escapeHTML(v.ipo_due_date || "Não indicada")}</p>
       <div class="actions">
-        <button data-action="select" data-id="${escapeHTML(v.id)}">Manutenção</button>
+        <button data-action="select" data-id="${escapeHTML(v.id)}">
+          Manutenção
+        </button>
         ${isMaster() ? `
-          <button class="secondary" data-action="edit" data-id="${escapeHTML(v.id)}">Editar</button>
-          <button class="secondary" data-action="qr" data-id="${escapeHTML(v.id)}">Ficha / QR</button>
+          <button class="secondary" data-action="edit" data-id="${escapeHTML(v.id)}">
+            Editar
+          </button>
+          <button class="secondary" data-action="qr" data-id="${escapeHTML(v.id)}">
+            Ficha / QR
+          </button>
         ` : ""}
       </div>
     </article>
@@ -339,15 +389,22 @@ function fillVehicleForm(v) {
 
 function resetVehicleForm() {
   $("vehicleForm")?.reset();
+
   if ($("vehicleId")) $("vehicleId").value = "";
-  if ($("vehicleFormTitle")) $("vehicleFormTitle").textContent = "Novo veículo";
+  if ($("vehicleFormTitle")) {
+    $("vehicleFormTitle").textContent = "Novo veículo";
+  }
+
   $("vehicleForm")?.classList.add("hidden");
 }
 
 async function saveVehicle(event) {
   event.preventDefault();
 
-  if (!isMaster()) return notify("Sem permissões para alterar veículos.", "error");
+  if (!isMaster()) {
+    notify("Sem permissões para alterar veículos.", "error");
+    return;
+  }
 
   const id = $("vehicleId").value;
 
@@ -365,14 +422,19 @@ async function saveVehicle(event) {
     private_notes: $("privateNotes").value.trim() || null
   };
 
-  const query = id
-    ? db.from("vehicles").update(record).eq("id", id)
-    : db.from("vehicles").insert({ ...record, owner_id: currentUser.id });
+  let result;
 
-  const { error } = await query;
+  if (id) {
+    result = await db.from("vehicles").update(record).eq("id", id);
+  } else {
+    result = await db.from("vehicles").insert({
+      ...record,
+      owner_id: currentUser.id
+    });
+  }
 
-  if (error) {
-    notify("Não foi possível guardar o veículo: " + error.message, "error");
+  if (result.error) {
+    notify("Erro ao guardar veículo: " + result.error.message, "error");
     return;
   }
 
@@ -381,7 +443,7 @@ async function saveVehicle(event) {
   await loadVehicles();
 }
 
-/* ---------- Manutenções ---------- */
+// ---------- Manutenções ----------
 
 async function loadMaintenance(vehicle) {
   const { data, error } = await db
@@ -404,18 +466,26 @@ function renderMaintenance() {
   if (!list) return;
 
   if (!maintenanceRecords.length) {
-    list.innerHTML = '<p class="muted">Sem intervenções registadas.</p>';
+    list.innerHTML =
+      '<p class="muted">Sem intervenções registadas.</p>';
     return;
   }
 
   list.innerHTML = maintenanceRecords.map(r => `
     <article class="panel maintenance-card">
       <h3>${escapeHTML(r.title)}</h3>
-      <p>Data: ${escapeHTML(r.service_date || "—")} · ${escapeHTML(r.odometer_km ?? "—")} km</p>
+      <p>Data: ${escapeHTML(r.service_date || "—")} ·
+        ${escapeHTML(r.odometer_km ?? "—")} km</p>
       <p>Categoria: ${escapeHTML(r.category || "—")}</p>
-      <p>Custo: ${r.cost_eur == null ? "—" : escapeHTML(Number(r.cost_eur).toFixed(2) + " €")}</p>
+      <p>Custo: ${
+        r.cost_eur == null
+          ? "—"
+          : escapeHTML(Number(r.cost_eur).toFixed(2) + " €")
+      }</p>
       <p>${escapeHTML(r.parts_public || "")}</p>
-      ${isMaster() ? `<p>Notas internas: ${escapeHTML(r.notes_private || "—")}</p>` : ""}
+      ${isMaster()
+        ? `<p>Notas internas: ${escapeHTML(r.notes_private || "—")}</p>`
+        : ""}
     </article>
   `).join("");
 }
@@ -424,7 +494,8 @@ async function saveMaintenance(event) {
   event.preventDefault();
 
   if (!selectedVehicle) {
-    return notify("Seleciona primeiro um veículo.", "error");
+    notify("Seleciona primeiro um veículo.", "error");
+    return;
   }
 
   const record = {
@@ -434,7 +505,9 @@ async function saveMaintenance(event) {
     category: $("category").value.trim() || null,
     title: $("maintenanceTitle").value.trim(),
     cost_eur: $("costEur").value ? Number($("costEur").value) : null,
-    next_service_km: $("nextServiceKm").value ? Number($("nextServiceKm").value) : null,
+    next_service_km: $("nextServiceKm").value
+      ? Number($("nextServiceKm").value)
+      : null,
     next_service_date: $("nextServiceDate").value || null,
     parts_public: $("partsPublic").value.trim() || null,
     notes_private: $("notesPrivate").value.trim() || null,
@@ -442,65 +515,69 @@ async function saveMaintenance(event) {
   };
 
   const id = $("maintenanceId").value;
-  const query = id
-    ? db.from("maintenance_records").update(record).eq("id", id)
-    : db.from("maintenance_records").insert(record);
 
-  const { error } = await query;
+  const result = id
+    ? await db.from("maintenance_records").update(record).eq("id", id)
+    : await db.from("maintenance_records").insert(record);
 
-  if (error) {
-    notify("Não foi possível guardar a intervenção: " + error.message, "error");
+  if (result.error) {
+    notify("Erro ao guardar intervenção: " + result.error.message, "error");
     return;
   }
 
-  // Atualiza a quilometragem do veículo se a intervenção for mais recente.
   if (record.odometer_km > Number(selectedVehicle.current_km || 0)) {
-    const { error: kmError } = await db
+    const { error } = await db
       .from("vehicles")
       .update({ current_km: record.odometer_km })
       .eq("id", selectedVehicle.id);
 
-    if (kmError) {
-      notify("Intervenção guardada, mas não foi possível atualizar os quilómetros.", "error");
+    if (error) {
+      notify(
+        "Intervenção guardada, mas os quilómetros não foram atualizados.",
+        "error"
+      );
     }
   }
 
-  $("maintenanceForm").reset();
-  $("maintenanceId").value = "";
-  $("maintenanceForm").classList.add("hidden");
+  $("maintenanceForm")?.reset();
+  if ($("maintenanceId")) $("maintenanceId").value = "";
+  $("maintenanceForm")?.classList.add("hidden");
 
   notify("Intervenção guardada.", "success");
   await loadVehicles();
-  if (selectedVehicle) await loadMaintenance(selectedVehicle);
+
+  if (selectedVehicle) {
+    await loadMaintenance(selectedVehicle);
+  }
 }
 
-/* ---------- Alertas ---------- */
+// ---------- Alertas de IPO ----------
 
 function renderAlerts() {
   const today = new Date().toISOString().slice(0, 10);
   const alerts = [];
 
   vehicles.forEach(v => {
-    if (v.ipo_due_date) {
-      const days = Math.ceil(
-        (new Date(v.ipo_due_date + "T00:00:00") -
-         new Date(today + "T00:00:00")) / 86400000
-      );
+    if (!v.ipo_due_date) return;
 
-      if (days <= 30) {
-        alerts.push({
-          title: `${v.make} ${v.model} — IPO`,
-          message: days < 0
-            ? `IPO expirada há ${Math.abs(days)} dias.`
-            : days === 0
-              ? "IPO termina hoje."
-              : `IPO dentro de ${days} dias.`
-        });
-      }
+    const days = Math.ceil(
+      (new Date(v.ipo_due_date + "T00:00:00") -
+       new Date(today + "T00:00:00")) / 86400000
+    );
+
+    if (days <= 30) {
+      alerts.push({
+        title: `${v.make} ${v.model} — IPO`,
+        message: days < 0
+          ? `IPO expirada há ${Math.abs(days)} dias.`
+          : days === 0
+            ? "IPO termina hoje."
+            : `IPO dentro de ${days} dias.`
+      });
     }
   });
 
-  $("alertCount") && ($("alertCount").textContent = alerts.length);
+  if ($("alertCount")) $("alertCount").textContent = alerts.length;
 
   const panel = $("alertsPanel");
   const list = $("alertsList");
@@ -517,17 +594,19 @@ function renderAlerts() {
   `).join("");
 }
 
-/* ---------- Ficha QR ---------- */
+// ---------- Ficha QR e área pública ----------
 
 function openQr(vehicle) {
   const url = new URL(location.href);
   url.search = "";
-  url.searchParams.set("vehicle", vehicle.code || vehicle.id);
+
+  // Usar public_id para a ficha, sem expor notas internas.
+  url.searchParams.set("vehicle", vehicle.public_id || vehicle.id);
 
   $("qrVehicleTitle").textContent = `${vehicle.make} ${vehicle.model}`;
   $("qrUrl").value = url.href;
   $("qrHelp").textContent =
-    "A ficha pública só ficará disponível quando a função SQL pública for ligada e testada.";
+    "A consulta pública só ficará ativa depois de ligar e testar a função SQL pública.";
 
   $("qrImage").src =
     "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" +
@@ -541,15 +620,16 @@ async function showPublicVehicle(code) {
   $("appView")?.classList.add("hidden");
   $("publicView")?.classList.remove("hidden");
 
-  $("publicVehicle").innerHTML =
-    "<p>A ficha pública ainda precisa de ser ligada à função SQL get_public_vehicle. " +
-    "Não serão apresentados dados privados através deste endereço.</p>";
+  $("publicVehicle").textContent =
+    "A ficha pública ainda não está ligada à função SQL. " +
+    "Por segurança, não são apresentados dados do veículo.";
 
-  $("publicMaintenance").innerHTML = "";
+  $("publicMaintenance").textContent = "";
+
   console.info("Pedido de ficha pública:", code);
 }
 
-/* ---------- API interna ---------- */
+// ---------- Exportação para outros módulos ----------
 
 window.GaragemOnline = {
   get client() { return db; },
