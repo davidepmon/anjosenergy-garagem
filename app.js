@@ -158,7 +158,10 @@ function bindEvents() {
       });
 
       if (error) {
-        notify("Falha no login. Confirma o email e a palavra-passe.", "error");
+        notify(
+          "Falha no login. Confirma o email e a palavra-passe.",
+          "error"
+        );
       }
     } catch (error) {
       notify("Erro no login: " + error.message, "error");
@@ -179,7 +182,9 @@ function bindEvents() {
 
     const { error } = await db.auth.signOut();
 
-    if (error) notify("Não foi possível terminar a sessão.", "error");
+    if (error) {
+      notify("Não foi possível terminar a sessão.", "error");
+    }
   });
 
   $("newVehicleBtn")?.addEventListener("click", () => {
@@ -208,13 +213,19 @@ function bindEvents() {
 
   $("cancelMaintenance")?.addEventListener("click", () => {
     $("maintenanceForm")?.reset();
-    if ($("maintenanceId")) $("maintenanceId").value = "";
+
+    if ($("maintenanceId")) {
+      $("maintenanceId").value = "";
+    }
+
     $("maintenanceForm")?.classList.add("hidden");
   });
 
   $("maintenanceForm")?.addEventListener("submit", saveMaintenance);
 
-  $("closeQr")?.addEventListener("click", () => $("qrDialog")?.close());
+  $("closeQr")?.addEventListener("click", () => {
+    $("qrDialog")?.close();
+  });
 
   $("copyQrUrl")?.addEventListener("click", async () => {
     try {
@@ -229,7 +240,9 @@ function bindEvents() {
   $("printQr")?.addEventListener("click", () => window.print());
 
   $("openPublic")?.addEventListener("click", () => {
-    if ($("qrUrl")?.value) window.open($("qrUrl").value, "_blank");
+    if ($("qrUrl")?.value) {
+      window.open($("qrUrl").value, "_blank");
+    }
   });
 
   $("refreshTeam")?.addEventListener("click", loadTeam);
@@ -293,8 +306,10 @@ async function loadTeam() {
       return;
     }
 
-    list.innerHTML = data.map(member => {
-      const role = member.role === "master" ? "master" : "mechanic";
+    list.innerHTML = data.map((member) => {
+      const role =
+        member.role === "master" ? "master" : "mechanic";
+
       const ownAccount = member.id === currentUser.id;
 
       return `
@@ -302,15 +317,23 @@ async function loadTeam() {
           <h3>${escapeHTML(member.full_name || "Sem nome")}</h3>
           <p>${escapeHTML(member.email || "Email não indicado")}</p>
           <p>Função atual:
-            <strong>${role === "master" ? "Master" : "Mecânico"}</strong>
+            <strong>
+              ${role === "master" ? "Master" : "Mecânico"}
+            </strong>
           </p>
 
           <label>
             Nova função
             <select data-team-role="${escapeHTML(member.id)}"
               ${ownAccount ? "disabled" : ""}>
-              <option value="master" ${role === "master" ? "selected" : ""}>Master</option>
-              <option value="mechanic" ${role === "mechanic" ? "selected" : ""}>Mecânico</option>
+              <option value="master"
+                ${role === "master" ? "selected" : ""}>
+                Master
+              </option>
+              <option value="mechanic"
+                ${role === "mechanic" ? "selected" : ""}>
+                Mecânico
+              </option>
             </select>
           </label>
 
@@ -327,9 +350,10 @@ async function loadTeam() {
       `;
     }).join("");
 
-    list.querySelectorAll("[data-team-save]").forEach(button => {
-      button.addEventListener("click", async () => {
-        const userId = button.dataset.teamSave;
+    list.querySelectorAll("[data-team-save]").forEach((saveButton) => {
+      saveButton.addEventListener("click", async () => {
+        const userId = saveButton.dataset.teamSave;
+
         const select = list.querySelector(
           `[data-team-role="${userId}"]`
         );
@@ -343,8 +367,8 @@ async function loadTeam() {
           return;
         }
 
-        button.disabled = true;
-        button.textContent = "A guardar...";
+        saveButton.disabled = true;
+        saveButton.textContent = "A guardar...";
 
         try {
           const { error } = await db.rpc("master_set_profile_role", {
@@ -358,10 +382,13 @@ async function loadTeam() {
           await loadTeam();
         } catch (error) {
           console.error("Erro ao alterar função:", error);
-          notify("Erro ao alterar função: " + error.message, "error");
+          notify(
+            "Erro ao alterar função: " + error.message,
+            "error"
+          );
         } finally {
-          button.disabled = false;
-          button.textContent = "Guardar função";
+          saveButton.disabled = false;
+          saveButton.textContent = "Guardar função";
         }
       });
     });
@@ -372,6 +399,95 @@ async function loadTeam() {
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+/* ---------- Criar funcionário ---------- */
+
+function bindCreateTeamForm() {
+  const form = $("createTeamForm");
+
+  if (!form || form.dataset.bound === "true") return;
+
+  form.dataset.bound = "true";
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (!db || !currentUser || !isMaster()) {
+      notify("Só o Master pode criar funcionários.", "error");
+      return;
+    }
+
+    const name = $("teamName")?.value.trim();
+    const email = $("teamEmail")?.value.trim();
+    const button = $("createTeamButton");
+
+    if (!name || !email) {
+      notify("Preenche o nome e o email.", "error");
+      return;
+    }
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "A criar conta...";
+    }
+
+    try {
+      const { data, error } = await db.functions.invoke(
+        "create-team-user",
+        {
+          body: {
+            nome: name,
+            email,
+            role: "mechanic"
+          }
+        }
+      );
+
+      if (error) {
+        let message = error.message;
+
+        try {
+          const details = await error.context?.json();
+
+          if (details?.error) {
+            message = details.error;
+          }
+        } catch {
+          // Mantém a mensagem original.
+        }
+
+        throw new Error(message);
+      }
+
+      if (!data?.success) {
+        throw new Error(
+          data?.error || "Não foi possível criar a conta."
+        );
+      }
+
+      notify(
+        data.message ||
+          "Funcionário criado. Verifica o email de convite.",
+        "success"
+      );
+
+      form.reset();
+      await loadTeam();
+    } catch (error) {
+      console.error("Erro ao criar funcionário:", error);
+
+      notify(
+        "Erro ao criar funcionário: " + error.message,
+        "error"
+      );
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Criar conta e enviar convite";
+      }
+    }
+  });
 }
 
 /* ---------- Veículos ---------- */
@@ -392,7 +508,9 @@ async function loadVehicles() {
   renderAlerts();
 
   if (selectedVehicle) {
-    const updated = vehicles.find(v => v.id === selectedVehicle.id);
+    const updated = vehicles.find(
+      (vehicle) => vehicle.id === selectedVehicle.id
+    );
 
     if (updated) {
       selectedVehicle = updated;
@@ -418,36 +536,60 @@ function renderVehicles() {
     return;
   }
 
-  list.innerHTML = vehicles.map(v => `
+  list.innerHTML = vehicles.map((vehicle) => `
     <article class="panel vehicle-card">
-      <p class="eyebrow">${escapeHTML(v.code || "FROTA")}</p>
-      <h3>${escapeHTML(v.make)} ${escapeHTML(v.model)}</h3>
-      <p>Matrícula: <strong>${escapeHTML(v.plate || "—")}</strong></p>
-      <p>Quilometragem: ${escapeHTML(v.current_km ?? 0)} km</p>
-      <p>IPO: ${escapeHTML(v.ipo_due_date || "Não indicada")}</p>
+      <p class="eyebrow">${escapeHTML(vehicle.code || "FROTA")}</p>
+      <h3>${escapeHTML(vehicle.make)} ${escapeHTML(vehicle.model)}</h3>
+      <p>Matrícula:
+        <strong>${escapeHTML(vehicle.plate || "—")}</strong>
+      </p>
+      <p>Quilometragem:
+        ${escapeHTML(vehicle.current_km ?? 0)} km
+      </p>
+      <p>IPO:
+        ${escapeHTML(vehicle.ipo_due_date || "Não indicada")}
+      </p>
+
       <div class="actions">
-        <button data-action="select" data-id="${escapeHTML(v.id)}">
+        <button data-action="select" data-id="${escapeHTML(vehicle.id)}">
           Manutenção
         </button>
+
         ${isMaster() ? `
-          <button class="secondary" data-action="edit" data-id="${escapeHTML(v.id)}">Editar</button>
-          <button class="secondary" data-action="qr" data-id="${escapeHTML(v.id)}">Ficha / QR</button>
+          <button class="secondary"
+            data-action="edit"
+            data-id="${escapeHTML(vehicle.id)}">
+            Editar
+          </button>
+
+          <button class="secondary"
+            data-action="qr"
+            data-id="${escapeHTML(vehicle.id)}">
+            Ficha / QR
+          </button>
         ` : ""}
       </div>
     </article>
   `).join("");
 
-  list.querySelectorAll("button[data-action]").forEach(button => {
+  list.querySelectorAll("button[data-action]").forEach((button) => {
     button.addEventListener("click", async () => {
-      const vehicle = vehicles.find(v => String(v.id) === button.dataset.id);
+      const vehicle = vehicles.find(
+        (item) => String(item.id) === button.dataset.id
+      );
+
       if (!vehicle) return;
 
       if (button.dataset.action === "select") {
         selectedVehicle = vehicle;
+
         $("maintenancePanel")?.classList.remove("hidden");
+
         $("maintenanceHeading").textContent =
           `Manutenção — ${vehicle.make} ${vehicle.model}`;
+
         $("maintenanceForm")?.classList.add("hidden");
+
         await loadMaintenance(vehicle);
       }
 
@@ -462,19 +604,19 @@ function renderVehicles() {
   });
 }
 
-function fillVehicleForm(v) {
-  $("vehicleId").value = v.id || "";
-  $("make").value = v.make || "";
-  $("model").value = v.model || "";
-  $("plate").value = v.plate || "";
-  $("year").value = v.year || "";
-  $("engine").value = v.engine || "";
-  $("fuel").value = v.fuel || "";
-  $("currentKm").value = v.current_km ?? "";
-  $("ipoDueDate").value = v.ipo_due_date || "";
-  $("code").value = v.code || "";
-  $("publicDescription").value = v.public_description || "";
-  $("privateNotes").value = v.private_notes || "";
+function fillVehicleForm(vehicle) {
+  $("vehicleId").value = vehicle.id || "";
+  $("make").value = vehicle.make || "";
+  $("model").value = vehicle.model || "";
+  $("plate").value = vehicle.plate || "";
+  $("year").value = vehicle.year || "";
+  $("engine").value = vehicle.engine || "";
+  $("fuel").value = vehicle.fuel || "";
+  $("currentKm").value = vehicle.current_km ?? "";
+  $("ipoDueDate").value = vehicle.ipo_due_date || "";
+  $("code").value = vehicle.code || "";
+  $("publicDescription").value = vehicle.public_description || "";
+  $("privateNotes").value = vehicle.private_notes || "";
 
   $("vehicleFormTitle").textContent = "Editar veículo";
   $("vehicleForm").classList.remove("hidden");
@@ -483,8 +625,13 @@ function fillVehicleForm(v) {
 
 function resetVehicleForm() {
   $("vehicleForm")?.reset();
+
   if ($("vehicleId")) $("vehicleId").value = "";
-  if ($("vehicleFormTitle")) $("vehicleFormTitle").textContent = "Novo veículo";
+
+  if ($("vehicleFormTitle")) {
+    $("vehicleFormTitle").textContent = "Novo veículo";
+  }
+
   $("vehicleForm")?.classList.add("hidden");
 }
 
@@ -505,7 +652,9 @@ async function saveVehicle(event) {
     year: $("year").value ? Number($("year").value) : null,
     engine: $("engine").value.trim() || null,
     fuel: $("fuel").value.trim() || null,
-    current_km: $("currentKm").value ? Number($("currentKm").value) : 0,
+    current_km: $("currentKm").value
+      ? Number($("currentKm").value)
+      : 0,
     ipo_due_date: $("ipoDueDate").value || null,
     code: $("code").value.trim() || null,
     public_description: $("publicDescription").value.trim() || null,
@@ -557,20 +706,24 @@ function renderMaintenance() {
     return;
   }
 
-  list.innerHTML = maintenanceRecords.map(r => `
+  list.innerHTML = maintenanceRecords.map((record) => `
     <article class="panel maintenance-card">
-      <h3>${escapeHTML(r.title)}</h3>
-      <p>Data: ${escapeHTML(r.service_date || "—")} ·
-        ${escapeHTML(r.odometer_km ?? "—")} km</p>
-      <p>Categoria: ${escapeHTML(r.category || "—")}</p>
+      <h3>${escapeHTML(record.title)}</h3>
+      <p>
+        Data: ${escapeHTML(record.service_date || "—")} ·
+        ${escapeHTML(record.odometer_km ?? "—")} km
+      </p>
+      <p>Categoria: ${escapeHTML(record.category || "—")}</p>
       <p>Custo: ${
-        r.cost_eur == null
+        record.cost_eur == null
           ? "—"
-          : escapeHTML(Number(r.cost_eur).toFixed(2) + " €")
+          : escapeHTML(Number(record.cost_eur).toFixed(2) + " €")
       }</p>
-      <p>${escapeHTML(r.parts_public || "")}</p>
+      <p>${escapeHTML(record.parts_public || "")}</p>
       ${isMaster()
-        ? `<p>Notas internas: ${escapeHTML(r.notes_private || "—")}</p>`
+        ? `<p>Notas internas:
+            ${escapeHTML(record.notes_private || "—")}
+           </p>`
         : ""}
     </article>
   `).join("");
@@ -590,7 +743,9 @@ async function saveMaintenance(event) {
     odometer_km: Number($("odometerKm").value),
     category: $("category").value.trim() || null,
     title: $("maintenanceTitle").value.trim(),
-    cost_eur: $("costEur").value ? Number($("costEur").value) : null,
+    cost_eur: $("costEur").value
+      ? Number($("costEur").value)
+      : null,
     next_service_km: $("nextServiceKm").value
       ? Number($("nextServiceKm").value)
       : null,
@@ -607,11 +762,17 @@ async function saveMaintenance(event) {
     : await db.from("maintenance_records").insert(record);
 
   if (result.error) {
-    notify("Erro ao guardar intervenção: " + result.error.message, "error");
+    notify(
+      "Erro ao guardar intervenção: " + result.error.message,
+      "error"
+    );
     return;
   }
 
-  if (record.odometer_km > Number(selectedVehicle.current_km || 0)) {
+  if (
+    record.odometer_km >
+    Number(selectedVehicle.current_km || 0)
+  ) {
     const { error } = await db
       .from("vehicles")
       .update({ current_km: record.odometer_km })
@@ -626,7 +787,11 @@ async function saveMaintenance(event) {
   }
 
   $("maintenanceForm")?.reset();
-  if ($("maintenanceId")) $("maintenanceId").value = "";
+
+  if ($("maintenanceId")) {
+    $("maintenanceId").value = "";
+  }
+
   $("maintenanceForm")?.classList.add("hidden");
 
   notify("Intervenção guardada.", "success");
@@ -643,17 +808,19 @@ function renderAlerts() {
   const today = new Date().toISOString().slice(0, 10);
   const alerts = [];
 
-  vehicles.forEach(v => {
-    if (!v.ipo_due_date) return;
+  vehicles.forEach((vehicle) => {
+    if (!vehicle.ipo_due_date) return;
 
     const days = Math.ceil(
-      (new Date(v.ipo_due_date + "T00:00:00") -
-       new Date(today + "T00:00:00")) / 86400000
+      (
+        new Date(vehicle.ipo_due_date + "T00:00:00") -
+        new Date(today + "T00:00:00")
+      ) / 86400000
     );
 
     if (days <= 30) {
       alerts.push({
-        title: `${v.make} ${v.model} — IPO`,
+        title: `${vehicle.make} ${vehicle.model} — IPO`,
         message: days < 0
           ? `IPO expirada há ${Math.abs(days)} dias.`
           : days === 0
@@ -663,7 +830,9 @@ function renderAlerts() {
     }
   });
 
-  if ($("alertCount")) $("alertCount").textContent = alerts.length;
+  if ($("alertCount")) {
+    $("alertCount").textContent = alerts.length;
+  }
 
   const panel = $("alertsPanel");
   const list = $("alertsList");
@@ -672,10 +841,10 @@ function renderAlerts() {
 
   panel.classList.toggle("hidden", alerts.length === 0);
 
-  list.innerHTML = alerts.map(a => `
+  list.innerHTML = alerts.map((alert) => `
     <div class="alert alert-warning">
-      <strong>${escapeHTML(a.title)}</strong>
-      <p>${escapeHTML(a.message)}</p>
+      <strong>${escapeHTML(alert.title)}</strong>
+      <p>${escapeHTML(alert.message)}</p>
     </div>
   `).join("");
 }
@@ -684,11 +853,18 @@ function renderAlerts() {
 
 function openQr(vehicle) {
   const url = new URL(location.href);
-  url.search = "";
-  url.searchParams.set("vehicle", vehicle.public_id || vehicle.id);
 
-  $("qrVehicleTitle").textContent = `${vehicle.make} ${vehicle.model}`;
+  url.search = "";
+  url.searchParams.set(
+    "vehicle",
+    vehicle.public_id || vehicle.id
+  );
+
+  $("qrVehicleTitle").textContent =
+    `${vehicle.make} ${vehicle.model}`;
+
   $("qrUrl").value = url.href;
+
   $("qrHelp").textContent =
     "A ficha pública só estará ativa depois de ligar e testar a função SQL pública.";
 
@@ -723,82 +899,8 @@ window.GaragemOnline = {
   get selectedVehicle() { return selectedVehicle; },
   reload: loadVehicles,
   logout: () => db?.auth.signOut()
-   
-const createTeamForm = document.getElementById("createTeamForm");
-
-if (createTeamForm) {
-  createTeamForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    const name = document.getElementById("teamName").value.trim();
-    const email = document.getElementById("teamEmail").value.trim();
-    const button = document.getElementById("createTeamButton");
-    const status = document.getElementById("status");
-
-    if (!name || !email) {
-      status.textContent = "Preenche o nome e o email.";
-      return;
-    }
-
-    button.disabled = true;
-    button.textContent = "A criar conta...";
-    status.textContent = "";
-
-    try {
-      const { data: sessionData, error: sessionError } =
-        await db.auth.getSession();
-
-      if (sessionError) throw sessionError;
-
-      const token = sessionData.session?.access_token;
-
-      if (!token) {
-        throw new Error("A sessão expirou. Entra novamente.");
-      }
-
-      const { data, error } = await db.functions.invoke(
-        "create-team-user",
-        {
-          body: {
-            nome: name,
-            email: email,
-            role: "mechanic"
-          }
-        }
-      );
-
-      if (error) {
-        let details = error.message;
-
-        try {
-          const response = await error.context?.json();
-          if (response?.error) details = response.error;
-        } catch {}
-
-        throw new Error(details);
-      }
-
-      if (!data?.success) {
-        throw new Error(data?.error || "Não foi possível criar a conta.");
-      }
-
-      status.textContent =
-        data.message || "Conta criada. Foi enviado um convite por email.";
-
-      createTeamForm.reset();
-
-      if (typeof loadTeam === "function") {
-        await loadTeam();
-      }
-    } catch (error) {
-      console.error("Erro ao criar funcionário:", error);
-      status.textContent =
-        "Erro ao criar funcionário: " + error.message;
-    } finally {
-      button.disabled = false;
-      button.textContent = "Criar conta e enviar convite";
-    }
-  });
-}
-
 };
+
+/* ---------- Inicialização do formulário da equipa ---------- */
+
+document.addEventListener("DOMContentLoaded", bindCreateTeamForm);
