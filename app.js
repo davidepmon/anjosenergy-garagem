@@ -1,3 +1,4 @@
+
 /* ==========================================
    GARAGEM ONLINE — ANJOSENERGY
    Aplicação empresarial
@@ -244,7 +245,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (session?.user) {
-      // Evitar operações assíncronas diretamente no callback.
       setTimeout(() => {
         if (!passwordSetupPending) {
           loadProfile(session.user);
@@ -353,6 +353,10 @@ function bindEvents() {
   });
 
   $("maintenanceForm")?.addEventListener("submit", saveMaintenance);
+
+  // NOVO: exportação Excel, apenas para a conta Master.
+  $("exportExcelBtn")?.addEventListener("click", exportToExcel);
+
   $("refreshTeam")?.addEventListener("click", loadTeam);
 
   $("closeQr")?.addEventListener("click", () => $("qrDialog")?.close());
@@ -425,8 +429,6 @@ async function saveNewPassword(event) {
 
     if (error) throw error;
 
-    // Só depois de a palavra-passe ser guardada é que
-    // deixamos de bloquear a entrada na aplicação.
     passwordSetupPending = false;
     clearAuthUrl();
 
@@ -458,7 +460,6 @@ async function saveNewPassword(event) {
       "passwordStatus"
     );
 
-    // Mantém o formulário visível para permitir nova tentativa.
     showPasswordSetup();
   } finally {
     if (button) {
@@ -1053,6 +1054,158 @@ async function saveMaintenance(event) {
   await loadVehicles();
 
   if (selectedVehicle) await loadMaintenance(selectedVehicle);
+}
+
+/* ---------- Exportação Excel ---------- */
+
+async function exportToExcel() {
+  if (!currentUser || !isMaster()) {
+    notify("Só a conta Master pode exportar os dados.", "error");
+    return;
+  }
+
+  if (!window.XLSX) {
+    notify(
+      "Não foi possível carregar a biblioteca Excel. Verifica a ligação à internet.",
+      "error"
+    );
+    return;
+  }
+
+  const button = $("exportExcelBtn");
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "A preparar Excel...";
+  }
+
+  try {
+    // Consultar as viaturas acessíveis à conta atual.
+    const { data: vehicleData, error: vehicleError } = await db
+      .from("vehicles")
+      .select("*")
+      .order("make", { ascending: true });
+
+    if (vehicleError) throw vehicleError;
+
+    // Consultar as manutenções acessíveis à conta atual.
+    const { data: maintenanceData, error: maintenanceError } = await db
+      .from("maintenance_records")
+      .select("*")
+      .order("service_date", { ascending: false });
+
+    if (maintenanceError) throw maintenanceError;
+
+    const allVehicles = vehicleData || [];
+    const allMaintenance = maintenanceData || [];
+
+    const vehicleRows = allVehicles.map((v) => ({
+      "Código interno": v.code || "",
+      "Matrícula": v.plate || "",
+      "Marca": v.make || "",
+      "Modelo": v.model || "",
+      "Ano": v.year ?? "",
+      "Motor": v.engine || "",
+      "Combustível": v.fuel || "",
+      "Quilómetros atuais": v.current_km ?? "",
+      "Data limite IPO": v.ipo_due_date || "",
+      "Descrição pública": v.public_description || "",
+      "Notas internas": v.private_notes || ""
+    }));
+
+    const vehicleById = new Map(
+      allVehicles.map((v) => [v.id, v])
+    );
+
+    const maintenanceRows = allMaintenance.map((m) => {
+      const vehicle = vehicleById.get(m.vehicle_id);
+
+      return {
+        "Matrícula": vehicle?.plate || "",
+        "Marca": vehicle?.make || "",
+        "Modelo": vehicle?.model || "",
+        "Data": m.service_date || "",
+        "Quilómetros": m.odometer_km ?? "",
+        "Categoria": m.category || "",
+        "Serviço efetuado": m.title || "",
+        "Peças / trabalho": m.parts_public || "",
+        "Notas internas": m.notes_private || "",
+        "Custo (€)": m.cost_eur == null ? "" : Number(m.cost_eur),
+        "Próxima manutenção (km)": m.next_service_km ?? "",
+        "Data da próxima manutenção": m.next_service_date || ""
+      };
+    });
+
+    const workbook = XLSX.utils.book_new();
+
+    const vehicleSheet = XLSX.utils.json_to_sheet(vehicleRows);
+    const maintenanceSheet = XLSX.utils.json_to_sheet(maintenanceRows);
+
+    vehicleSheet["!cols"] = [
+      { wch: 16 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 10 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 20 },
+      { wch: 18 },
+      { wch: 32 },
+      { wch: 32 }
+    ];
+
+    maintenanceSheet["!cols"] = [
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 30 },
+      { wch: 32 },
+      { wch: 32 },
+      { wch: 14 },
+      { wch: 24 },
+      { wch: 24 }
+    ];
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      vehicleSheet,
+      "Viaturas"
+    );
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      maintenanceSheet,
+      "Manutenções"
+    );
+
+    const date = new Date().toISOString().slice(0, 10);
+
+    XLSX.writeFile(
+      workbook,
+      `AnjosEnergy_Exportacao_${date}.xlsx`
+    );
+
+    notify(
+      `Exportação concluída: ${allVehicles.length} viaturas e ${allMaintenance.length} manutenções.`,
+      "success"
+    );
+  } catch (error) {
+    console.error("Erro na exportação Excel:", error);
+
+    notify(
+      "Erro ao exportar Excel: " + error.message,
+      "error"
+    );
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Exportar para Excel";
+    }
+  }
 }
 
 /* ---------- Alertas de IPO ---------- */
