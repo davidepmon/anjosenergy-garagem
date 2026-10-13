@@ -1,4 +1,3 @@
-
 /* ==========================================
    GARAGEM ONLINE — ANJOSENERGY
    Aplicação empresarial
@@ -16,6 +15,10 @@ let currentProfile = null;
 let vehicles = [];
 let selectedVehicle = null;
 let maintenanceRecords = [];
+
+// Mantém o formulário de palavra-passe durante o convite.
+let passwordSetupPending = false;
+let authInitialized = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -52,6 +55,49 @@ function setVisible(id, visible) {
   $(id)?.classList.toggle("hidden", !visible);
 }
 
+/* ---------- Convite e recuperação ---------- */
+
+function detectPasswordSetup() {
+  const params = new URLSearchParams(location.search);
+  const hashParams = new URLSearchParams(
+    location.hash.replace(/^#/, "")
+  );
+
+  const type = hashParams.get("type");
+
+  return (
+    hashParams.has("access_token") &&
+    ["invite", "recovery", "signup", "magiclink"].includes(type)
+  ) || params.has("code");
+}
+
+function showPasswordSetup(message = "") {
+  passwordSetupPending = true;
+
+  setVisible("loginPanel", false);
+  setVisible("appView", false);
+  setVisible("publicView", false);
+  setVisible("passwordPanel", true);
+
+  if (message) {
+    notify(message, "info", "passwordStatus");
+  }
+
+  $("passwordPanel")?.scrollIntoView({ behavior: "smooth" });
+}
+
+function clearAuthUrl() {
+  const url = new URL(location.href);
+
+  url.hash = "";
+  url.searchParams.delete("code");
+  url.searchParams.delete("type");
+  url.searchParams.delete("token");
+  url.searchParams.delete("token_hash");
+
+  history.replaceState({}, document.title, url.pathname + url.search);
+}
+
 /* ---------- Interface ---------- */
 
 function showLoggedOut() {
@@ -59,11 +105,25 @@ function showLoggedOut() {
   setVisible("appView", false);
   setVisible("publicView", false);
 
+  if (passwordSetupPending) {
+    showPasswordSetup();
+    return;
+  }
+
+  setVisible("passwordPanel", false);
+
   if ($("userBadge")) $("userBadge").textContent = "";
   if ($("authToggle")) $("authToggle").textContent = "Entrar";
 }
 
 function showLoggedIn() {
+  // Nunca esconder o formulário enquanto o convite
+  // ou a recuperação da palavra-passe estiver pendente.
+  if (passwordSetupPending) {
+    showPasswordSetup();
+    return;
+  }
+
   setVisible("loginPanel", false);
   setVisible("passwordPanel", false);
   setVisible("appView", true);
@@ -99,28 +159,50 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
+  passwordSetupPending = detectPasswordSetup();
+
   db = window.supabase.createClient(
     SUPABASE_URL,
-    SUPABASE_ANON_KEY
+    SUPABASE_ANON_KEY,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    }
   );
 
   bindEvents();
 
+  if (passwordSetupPending) {
+    showPasswordSetup(
+      "Define uma palavra-passe com pelo menos 8 caracteres."
+    );
+  }
+
+  // Se o convite utilizar PKCE, trocar o código por uma sessão.
   const params = new URLSearchParams(location.search);
-  const hashParams = new URLSearchParams(
-    location.hash.replace(/^#/, "")
-  );
+  const code = params.get("code");
 
-  const hasInviteToken =
-    hashParams.has("access_token") ||
-    hashParams.get("type") === "invite" ||
-    hashParams.get("type") === "recovery" ||
-    params.has("code");
+  if (code) {
+    const { error } = await db.auth.exchangeCodeForSession(code);
 
-  if (hasInviteToken) {
-    setVisible("loginPanel", false);
-    setVisible("appView", false);
-    setVisible("passwordPanel", true);
+    if (error) {
+      console.error("Erro ao validar convite:", error);
+      showPasswordSetup(
+        "Não foi possível validar o convite. Abre novamente o link mais recente do email."
+      );
+      notify(
+        "Erro ao validar o convite: " + error.message,
+        "error",
+        "passwordStatus"
+      );
+    } else {
+      showPasswordSetup(
+        "Convite validado. Agora define a tua palavra-passe."
+      );
+    }
   }
 
   const { data, error } = await db.auth.getSession();
@@ -131,46 +213,56 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (data.session?.user) {
-    if (!hasInviteToken) {
-      await loadProfile(data.session.user);
+    if (passwordSetupPending) {
+      showPasswordSetup(
+        "Define uma palavra-passe com pelo menos 8 caracteres."
+      );
     } else {
-      setVisible("passwordPanel", true);
-      setVisible("loginPanel", false);
+      await loadProfile(data.session.user);
     }
-  } else if (!hasInviteToken) {
+  } else if (!passwordSetupPending) {
     showLoggedOut();
   }
 
   db.auth.onAuthStateChange((event, session) => {
-    setTimeout(async () => {
-      if (
-        event === "PASSWORD_RECOVERY" ||
-        event === "SIGNED_IN" &&
-        (
-          new URLSearchParams(location.hash.replace(/^#/, "")).has("access_token") ||
-          new URLSearchParams(location.hash.replace(/^#/, "")).get("type") === "invite"
-        )
-      ) {
-        setVisible("loginPanel", false);
-        setVisible("appView", false);
-        setVisible("passwordPanel", true);
-        return;
-      }
+    // Não deixar os eventos de autenticação esconderem
+    // o formulário de definição de palavra-passe.
+    if (passwordSetupPending) {
+      showPasswordSetup();
+      return;
+    }
 
-      if (session?.user) {
-        await loadProfile(session.user);
-      } else {
-        currentUser = null;
-        currentProfile = null;
-        vehicles = [];
-        selectedVehicle = null;
-        maintenanceRecords = [];
-        showLoggedOut();
-      }
-    }, 0);
+    if (
+      event === "PASSWORD_RECOVERY" ||
+      event === "SIGNED_IN" &&
+      detectPasswordSetup()
+    ) {
+      showPasswordSetup(
+        "Define uma palavra-passe com pelo menos 8 caracteres."
+      );
+      return;
+    }
+
+    if (session?.user) {
+      // Evitar operações assíncronas diretamente no callback.
+      setTimeout(() => {
+        if (!passwordSetupPending) {
+          loadProfile(session.user);
+        }
+      }, 0);
+    } else {
+      currentUser = null;
+      currentProfile = null;
+      vehicles = [];
+      selectedVehicle = null;
+      maintenanceRecords = [];
+      showLoggedOut();
+    }
   });
 
-  if (params.get("vehicle")) {
+  authInitialized = true;
+
+  if (params.get("vehicle") && !passwordSetupPending) {
     await showPublicVehicle(params.get("vehicle"));
   }
 });
@@ -182,6 +274,7 @@ function bindEvents() {
     event.preventDefault();
 
     const button = $("loginForm").querySelector('[type="submit"]');
+
     if (button) {
       button.disabled = true;
       button.textContent = "A entrar...";
@@ -209,6 +302,11 @@ function bindEvents() {
   });
 
   $("authToggle")?.addEventListener("click", async () => {
+    if (passwordSetupPending) {
+      showPasswordSetup();
+      return;
+    }
+
     if (!currentUser) {
       $("loginPanel")?.scrollIntoView({ behavior: "smooth" });
       $("email")?.focus();
@@ -216,7 +314,10 @@ function bindEvents() {
     }
 
     const { error } = await db.auth.signOut();
-    if (error) notify("Não foi possível terminar a sessão.", "error");
+
+    if (error) {
+      notify("Não foi possível terminar a sessão.", "error");
+    }
   });
 
   $("passwordForm")?.addEventListener("submit", saveNewPassword);
@@ -315,37 +416,50 @@ async function saveNewPassword(event) {
 
     if (!sessionData.session) {
       throw new Error(
-        "O convite não criou uma sessão válida. " +
+        "Não existe uma sessão válida para este convite. " +
         "Abre novamente o link mais recente do email."
       );
     }
 
-    const { error } = await db.auth.updateUser({
-      password
-    });
+    const { error } = await db.auth.updateUser({ password });
 
     if (error) throw error;
 
+    // Só depois de a palavra-passe ser guardada é que
+    // deixamos de bloquear a entrada na aplicação.
+    passwordSetupPending = false;
+    clearAuthUrl();
+
+    $("passwordForm")?.reset();
+
     notify(
-      "Palavra-passe definida. A entrar na aplicação...",
+      "Palavra-passe definida com sucesso.",
       "success",
       "passwordStatus"
     );
 
-    $("passwordForm")?.reset();
+    const { data: userData, error: userError } =
+      await db.auth.getUser();
 
-    const { data } = await db.auth.getUser();
+    if (userError) throw userError;
 
-    if (data.user) {
-      await loadProfile(data.user);
+    if (userData.user) {
+      await loadProfile(userData.user);
+    } else {
+      setVisible("passwordPanel", false);
+      showLoggedOut();
     }
   } catch (error) {
     console.error("Erro ao definir palavra-passe:", error);
+
     notify(
       "Não foi possível definir a palavra-passe: " + error.message,
       "error",
       "passwordStatus"
     );
+
+    // Mantém o formulário visível para permitir nova tentativa.
+    showPasswordSetup();
   } finally {
     if (button) {
       button.disabled = false;
@@ -367,6 +481,12 @@ async function loadProfile(user) {
 
   if (error || !data) {
     currentProfile = null;
+
+    if (passwordSetupPending) {
+      showPasswordSetup();
+      return;
+    }
+
     showLoggedOut();
 
     notify(
@@ -380,6 +500,8 @@ async function loadProfile(user) {
 
   currentProfile = data;
   showLoggedIn();
+
+  if (passwordSetupPending) return;
 
   await loadVehicles();
 
@@ -430,10 +552,12 @@ function bindCreateTeamForm() {
 
       if (error) {
         let message = error.message;
+
         try {
           const details = await error.context?.json();
           if (details?.error) message = details.error;
         } catch {}
+
         throw new Error(message);
       }
 
@@ -465,6 +589,7 @@ async function loadTeam() {
 
   const list = $("teamList");
   const refresh = $("refreshTeam");
+
   if (!list) return;
 
   if (refresh) refresh.disabled = true;
@@ -577,6 +702,7 @@ async function loadTeam() {
           );
 
           if (error) throw error;
+
           if (!data?.success) {
             throw new Error(data?.error || "Não foi possível apagar a conta.");
           }
@@ -731,6 +857,7 @@ async function deleteVehicle(vehicle) {
     );
 
     if (error) throw error;
+
     if (!data?.success) {
       throw new Error(data?.error || "Não foi possível apagar o veículo.");
     }
@@ -962,6 +1089,7 @@ function renderAlerts() {
 
   const panel = $("alertsPanel");
   const list = $("alertsList");
+
   if (!panel || !list) return;
 
   panel.classList.toggle("hidden", alerts.length === 0);
@@ -978,6 +1106,7 @@ function renderAlerts() {
 
 function openQr(vehicle) {
   const url = new URL(location.href);
+
   url.search = "";
   url.searchParams.set("vehicle", vehicle.public_id || vehicle.id);
 
